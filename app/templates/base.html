@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <title>{% block title %}Thoth{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <!-- #app carries the brightness filter; overlays (banner, modals) live OUTSIDE it so
+       position:fixed resolves against the viewport, not this filtered box. -->
+  <div id="app">
+    <header class="topbar">
+      <div class="brand"><span class="glyph">𓁟</span> Thoth</div>
+      <nav class="topnav">
+        {% if current_user.is_authenticated %}
+          <a href="{{ url_for('workspaces.list_workspaces') }}">Workspaces</a>
+          {% if current_user.is_admin %}<a href="{{ url_for('auth.users') }}">Users</a>{% endif %}
+        {% endif %}
+      </nav>
+      <div class="controls">
+        <input type="range" id="brightness" min="50" max="150" value="100" title="Brightness">
+        <select id="theme-select" title="Theme">
+          <option value="dark">Dark</option>
+          <option value="professional">Professional</option>
+          <option value="terminal">Terminal</option>
+          <option value="synthwave">Synthwave</option>
+          <option value="classic">Classic</option>
+          <option value="contrast">Contrast</option>
+        </select>
+        {% if current_user.is_authenticated %}
+          <a class="ctl" href="{{ url_for('auth.logout') }}">Logout</a>
+        {% endif %}
+      </div>
+    </header>
+
+    <div id="flash-area">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="flash flash-{{ category }}"><span>{{ message }}</span><button class="flash-close" aria-label="Dismiss">×</button></div>
+        {% endfor %}
+      {% endwith %}
+    </div>
+
+    <main class="content">{% block content %}{% endblock %}</main>
+  </div>
+
+  {% block modals %}{% endblock %}
+
+  <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+  <script>
+    // Flash messages: click-to-dismiss + auto-dismiss after 4s.
+    document.querySelectorAll('#flash-area .flash').forEach((el) => {
+      const close = () => { el.style.transition = 'opacity .3s'; el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300); };
+      el.querySelector('.flash-close')?.addEventListener('click', close);
+      setTimeout(close, 4000);
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

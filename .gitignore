@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# Secrets / local config
+.env
+
+# SQLite databases (dev data) — Flask puts these in instance/
+instance/
+*.db
+*.db-shm
+*.db-wal
+
+# Per-workspace runtime files (exports, custom wordlists)
+data/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

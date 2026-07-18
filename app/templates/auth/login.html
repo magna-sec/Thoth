@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Login · Thoth{% endblock %}
+{% block content %}
+<div class="auth-card">
+  <h1>Sign in</h1>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Email / username<input name="email" autofocus required></label>
+    <label>Password<input name="password" type="password" required></label>
+    <button class="btn primary" type="submit">Sign in</button>
+  </form>
+  <p class="muted" style="font-size:12px">Accounts are created by an administrator.</p>
+</div>
+{% endblock %}

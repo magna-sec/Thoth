@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Task #{{ run.id }} · {{ run.module }} · Thoth{% endblock %}
+{% block content %}
+<div class="page-head">
+  <a href="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#runs" class="muted">← {{ ws.name }}</a>
+</div>
+<div class="page-head">
+  <h1>Task #{{ run.id }} — {{ run.module }}</h1>
+  <span class="badge run-{{ run.status }}" id="run-badge">{{ run.status }}</span>
+  {% if run.status in ("queued", "running") %}<span class="spinner"></span>{% endif %}
+  {% if run.status in ("done", "error") %}
+  <form method="post" action="{{ url_for('workspaces.rerun', workspace_id=ws.id, run_id=run.id) }}" style="margin:0 0 0 auto">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn small" type="submit" title="{{ 'Re-run ignoring the dedup ledger' if run.module == 'dirsearch' else 'Run this task again' }}">Re-run{{ " (force)" if run.module == "dirsearch" }} ↻</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if run.status == "done" and findings|length == 0 %}
+<div class="flash flash-info" style="margin:0 0 16px">
+  No results.
+  {% if run.module == "dirsearch" %}
+  Most often this means every candidate path was <strong>already tested by an earlier task</strong>
+  (dedup) — check the verbose log for “Skipping … already-tested”. Use <strong>Re-run (force)</strong>
+  above to test everything anyway, or clear the ledger on the subdomain page.
+  {% else %}
+  Nothing matched — see the verbose log below.
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="progress-wrap" id="progress-wrap"
+     {% if run.status not in ("queued", "running") %}hidden{% endif %}>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill"
+       style="width:{{ run.progress_pct }}%"></div></div>
+  <span class="muted mono" id="progress-text">{{ run.progress_done }}/{{ run.progress_total }} ({{ run.progress_pct }}%)</span>
+</div>
+
+<div class="stat-strip">
+  <div class="stat"><div class="stat-num" id="run-count">{{ findings|length }}</div><div class="stat-label">Results</div></div>
+  <div class="stat"><div class="stat-num">{{ (scope|length if scope else scope_all) }}</div><div class="stat-label">Subdomains</div></div>
+  <div class="stat"><div class="stat-num">{{ duration ~ "s" if duration is not none else "—" }}</div><div class="stat-label">Duration</div></div>
+  <div class="stat"><div class="stat-num">{{ run.started_at.strftime("%H:%M:%S") if run.started_at else "—" }}</div><div class="stat-label">Started</div></div>
+</div>
+
+<div class="card">
+  <h2>Ran against</h2>
+  <p class="muted" style="font-size:13px; margin-top:-4px">
+    Started by <strong>{{ creator.email if creator else "—" }}</strong>
+    {% if run.created_at %}at {{ run.created_at.strftime("%Y-%m-%d %H:%M:%S") }}{% endif %}.
+  </p>
+  {% if scope is none %}
+    <span class="chip">all {{ scope_all }} subdomains</span>
+  {% else %}
+    {% for h in scope %}<span class="chip mono sensitive">{{ h }}</span> {% endfor %}
+  {% endif %}
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Configuration</h2>
+    <table class="data">
+      {% for k, v in config.items() %}
+      <tr><td class="muted">{{ k }}</td><td class="mono">{{ v }}</td></tr>
+      {% else %}<tr><td class="muted">defaults</td><td></td></tr>{% endfor %}
+    </table>
+  </div>
+  <div class="card">
+    <h2>Verbose output</h2>
+    <pre class="console" id="run-log">{{ run.log or "(no verbose log for this run)" }}</pre>
+    {% if run.error %}<p class="flash flash-error" style="margin:8px 0 0">{{ run.error }}</p>{% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-toolbar">
+    <h2>Results <span class="muted">({{ findings|length }})</span></h2>
+    <input type="text" id="finding-filter" class="filter" placeholder="Filter host / path…">
+  </div>
+  <table class="data sortable">
+    <thead><tr><th data-sort>Host</th><th data-sort>Path</th><th data-sort>Status</th><th data-sort>Length</th><th></th></tr></thead>
+    <tbody id="findings-body">
+      {% for f in findings %}
+      <tr data-host="{{ f.target.host if f.target else '' }}" data-path="{{ f.path }}">
+        <td class="sensitive">{% if f.target %}<a href="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=f.target_id) }}">{{ f.target.host }}</a>{% endif %}</td>
+        <td class="sensitive mono"><a href="{{ (f.target.base_url if f.target else '') ~ f.path }}" target="_blank" rel="noopener">{{ f.path }}</a></td>
+        <td>{% if f.status_code %}<span class="badge s{{ f.status_code // 100 }}xx">{{ f.status_code }}</span>{% else %}<span class="badge dead">dead</span>{% endif %}</td>
+        <td class="mono">{{ f.content_length if f.content_length is not none else "" }}</td>
+        <td class="row-actions">
+          <button class="btn small resp-btn" data-tid="{{ f.target_id }}" data-path="{{ f.path }}">Response</button>
+          <button class="copy" data-copy="{{ (f.target.base_url if f.target else '') ~ f.path }}">⧉</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No results for this run.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>window.THOTH = {
+  baseUrl: "{{ url_for('workspaces.detail', workspace_id=ws.id) }}",
+  streamUrl: "{{ url_for('workspaces.stream', workspace_id=ws.id) }}",
+  runId: {{ run.id }},
+  runStatus: "{{ run.status }}"
+};</script>
+{% endblock %}
+{% block modals %}
+<div id="resp-modal" class="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span id="resp-title" class="mono"></span>
+      <button class="modal-close" id="resp-close">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Headers</h3><pre id="resp-headers" class="console"></pre>
+      <h3>Body <span id="resp-meta" class="muted"></span></h3><pre id="resp-body" class="console"></pre>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/table.js') }}"></script>
+<script src="{{ url_for('static', filename='js/results.js') }}"></script>
+<script src="{{ url_for('static', filename='js/response.js') }}"></script>
+<script src="{{ url_for('static', filename='js/activity.js') }}"></script>
+<script src="{{ url_for('static', filename='js/run-page.js') }}"></script>
+{% endblock %}

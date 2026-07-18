@@ -1,0 +1,192 @@
+"""Data model. Everything scoped to a Workspace with ON DELETE CASCADE for easy wipe."""
+from datetime import datetime
+
+from flask_login import UserMixin
+from werkzeug.security import check_password_hash, generate_password_hash
+
+from .extensions import db
+
+
+class User(UserMixin, db.Model):
+    __tablename__ = "users"
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    pw_hash = db.Column(db.String(255), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    memberships = db.relationship("WorkspaceMember", back_populates="user",
+                                  cascade="all, delete-orphan")
+
+    def set_password(self, pw):
+        self.pw_hash = generate_password_hash(pw)
+
+    def check_password(self, pw):
+        return check_password_hash(self.pw_hash, pw)
+
+
+class Workspace(db.Model):
+    """One client engagement. The wipe boundary: deleting this cascades everything."""
+    __tablename__ = "workspaces"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    client = db.Column(db.String(120))
+    proxy = db.Column(db.String(255))  # e.g. http://127.0.0.1:8080 (Burp) for all requests
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    members = db.relationship("WorkspaceMember", back_populates="workspace",
+                              cascade="all, delete-orphan")
+    targets = db.relationship("Target", back_populates="workspace",
+                              cascade="all, delete-orphan")
+    runs = db.relationship("Run", back_populates="workspace",
+                           cascade="all, delete-orphan")
+    findings = db.relationship("Finding", back_populates="workspace",
+                               cascade="all, delete-orphan")
+
+
+class WorkspaceMember(db.Model):
+    __tablename__ = "workspace_members"
+    id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+                             nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False)
+    role = db.Column(db.String(20), default="operator")  # owner | operator | viewer
+
+    workspace = db.relationship("Workspace", back_populates="members")
+    user = db.relationship("User", back_populates="memberships")
+    __table_args__ = (db.UniqueConstraint("workspace_id", "user_id"),)
+
+
+class Target(db.Model):
+    __tablename__ = "targets"
+    id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    host = db.Column(db.String(255), nullable=False)
+    scheme = db.Column(db.String(8), default="https")
+    port = db.Column(db.Integer)
+    notes = db.Column(db.Text)
+
+    # Latest quick-probe result, for colour-coding the domain card.
+    last_status_code = db.Column(db.Integer)
+    last_alive = db.Column(db.Boolean)
+    last_checked_at = db.Column(db.DateTime)
+    last_alive_at = db.Column(db.DateTime)  # last time it responded alive
+    last_waf = db.Column(db.String(120))    # detected WAF(s), comma-separated
+    last_server = db.Column(db.String(200)) # Server header from last probe
+    last_title = db.Column(db.String(300))  # <title> from last probe
+    last_tech = db.Column(db.String(300))   # detected tech, comma-separated
+    ip = db.Column(db.String(64))           # resolved IP
+    asn = db.Column(db.String(16))          # origin ASN (e.g. "15169")
+    asn_name = db.Column(db.String(200))    # ASN owner (e.g. "GOOGLE, US")
+    country = db.Column(db.String(8))       # country code from the ASN lookup
+
+    workspace = db.relationship("Workspace", back_populates="targets")
+    notes = db.relationship("Note", back_populates="target",
+                            cascade="all, delete-orphan", order_by="Note.created_at.desc()")
+
+    @property
+    def base_url(self):
+        if self.port:
+            return f"{self.scheme}://{self.host}:{self.port}"
+        return f"{self.scheme}://{self.host}"
+
+
+class Run(db.Model):
+    __tablename__ = "runs"
+    id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    module = db.Column(db.String(60), nullable=False)
+    config_json = db.Column(db.JSON, default=dict)
+    status = db.Column(db.String(20), default="queued")  # queued|running|done|error
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime)
+    finished_at = db.Column(db.DateTime)
+    error = db.Column(db.Text)
+    log = db.Column(db.Text)  # persisted verbose output, viewable after the run
+    progress_done = db.Column(db.Integer, default=0)
+    progress_total = db.Column(db.Integer, default=0)
+
+    workspace = db.relationship("Workspace", back_populates="runs")
+
+    @property
+    def progress_pct(self):
+        if not self.progress_total:
+            return 0
+        return min(100, int(self.progress_done * 100 / self.progress_total))
+    findings = db.relationship("Finding", back_populates="run",
+                               cascade="all, delete-orphan")
+
+
+class Finding(db.Model):
+    __tablename__ = "findings"
+    id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    run_id = db.Column(db.Integer, db.ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    target_id = db.Column(db.Integer, db.ForeignKey("targets.id", ondelete="CASCADE"))
+    path = db.Column(db.String(1024), default="/")
+    status_code = db.Column(db.Integer)
+    content_length = db.Column(db.Integer)
+    redirect = db.Column(db.String(1024))
+    extra_json = db.Column(db.JSON, default=dict)
+    found_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    workspace = db.relationship("Workspace", back_populates="findings")
+    run = db.relationship("Run", back_populates="findings")
+    target = db.relationship("Target")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "target_id": self.target_id,
+            "host": self.target.host if self.target else None,
+            "base_url": self.target.base_url if self.target else None,
+            "waf": self.target.last_waf if self.target else None,
+            "path": self.path,
+            "status_code": self.status_code,
+            "content_length": self.content_length,
+            "redirect": self.redirect,
+            "extra": self.extra_json or {},
+            "found_at": self.found_at.isoformat() if self.found_at else None,
+        }
+
+
+class Note(db.Model):
+    """Freeform operator note on a domain, optionally tied to a path."""
+    __tablename__ = "notes"
+    id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    target_id = db.Column(db.Integer, db.ForeignKey("targets.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    path = db.Column(db.String(1024))
+    body = db.Column(db.Text, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    target = db.relationship("Target", back_populates="notes")
+
+
+class TestedPath(db.Model):
+    """Dedup ledger (used from M4). Records every word we ever request, hit or miss,
+    keyed per (workspace, host, parent_path)."""
+    __tablename__ = "tested_paths"
+    __test__ = False  # not a pytest test class despite the "Test*" name
+    id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    host = db.Column(db.String(255), nullable=False)
+    parent_path = db.Column(db.String(1024), nullable=False, default="/")
+    word = db.Column(db.String(512), nullable=False)
+    status_code = db.Column(db.Integer)
+    first_tested_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("workspace_id", "host", "parent_path", "word",
+                            name="uq_tested_path"),
+    )

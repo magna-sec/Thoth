@@ -1,0 +1,430 @@
+{% extends "base.html" %}
+{% block title %}{{ ws.name }} · Thoth{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="sensitive">{{ ws.name }}</h1>
+  <span class="muted sensitive">{{ ws.client or "" }}</span>
+  {% if ws.proxy %}<span class="chip" title="All requests routed through this proxy">proxy: {{ ws.proxy }}</span>{% endif %}
+</div>
+
+<div class="tabs" data-tabs>
+  <button class="tab active" data-tab="overview">Overview</button>
+  <button class="tab" data-tab="findings">Results</button>
+  <button class="tab" data-tab="analysis">Analysis</button>
+  <button class="tab" data-tab="domains">Subdomains</button>
+  <button class="tab" data-tab="fuzz">Directory Fuzzing</button>
+  <button class="tab" data-tab="runs">Tasks</button>
+  {% if current_user.is_admin %}<button class="tab danger-tab" data-tab="danger">Wipe</button>{% endif %}
+</div>
+
+<!-- OVERVIEW -->
+<section class="tabpane active" data-pane="overview">
+  <div class="stat-strip">
+    <div class="stat"><div class="stat-num" id="stat-targets">{{ stats.targets }}</div><div class="stat-label">Subdomains</div></div>
+    <div class="stat"><div class="stat-num" id="stat-alive">{{ stats.alive }}</div><div class="stat-label">Alive</div></div>
+    <div class="stat"><div class="stat-num">{{ stats.waf }}</div><div class="stat-label">Behind WAF</div></div>
+    <div class="stat"><div class="stat-num" id="stat-findings">{{ stats.findings }}</div><div class="stat-label">Results</div></div>
+    <div class="stat"><div class="stat-num">{{ stats.runs }}</div><div class="stat-label">Tasks</div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <h2>Quick actions</h2>
+      <p class="muted" style="font-size:13px">1 — add subdomains · 2 — check which are live · 3 — fuzz directories.</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <form method="post" action="{{ url_for('workspaces.check_all', workspace_id=ws.id) }}" style="margin:0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn primary" type="submit">Check all live ▶</button>
+        </form>
+        <button class="btn tab-jump" data-goto="domains" type="button">Manage subdomains</button>
+        <button class="btn tab-jump" data-goto="fuzz" type="button">Directory fuzzing</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Recent tasks</h2>
+      <table class="data">
+        <thead><tr><th>#</th><th>Module</th><th>Status</th><th>When</th></tr></thead>
+        <tbody id="runs-body">
+          {% for r in runs[:12] %}
+          <tr data-run="{{ r.id }}"><td>{{ r.id }}</td><td>{{ r.module }}</td>
+            <td><span class="badge run-{{ r.status }}">{{ r.status }}</span></td>
+            <td class="muted">{{ r.created_at.strftime("%m-%d %H:%M") }}</td></tr>
+          {% else %}
+          <tr><td colspan="4" class="muted">No tasks yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- RESULTS (findings) -->
+<section class="tabpane" data-pane="findings">
+  <div class="card">
+    <div class="table-toolbar">
+      <h2>Results <span class="live-dot" title="Live"></span> <span class="muted" id="results-count"></span></h2>
+      <div class="domain-filters">
+        <input type="text" id="finding-filter" placeholder="Filter host / path…" class="filter">
+        <select id="rf-host"><option value="">All hosts</option></select>
+        <select id="rf-status">
+          <option value="">Any status</option>
+          <option value="2">2xx</option><option value="3">3xx</option>
+          <option value="4">4xx</option><option value="5">5xx</option>
+        </select>
+        <input type="text" id="rf-exstatus" class="filter" style="width:150px" placeholder="Exclude status 307,404">
+        <input type="text" id="rf-exsize" class="filter" style="width:130px" placeholder="Exclude size 14,0">
+        <select id="rf-waf">
+          <option value="">WAF: any</option>
+          <option value="1">Behind WAF</option>
+          <option value="0">No WAF</option>
+        </select>
+        <label class="ctl"><input type="checkbox" id="rf-hideredir"> Hide 3xx</label>
+        <label class="ctl"><input type="checkbox" id="rf-hidedead"> Hide dead</label>
+      </div>
+    </div>
+    <table class="data sortable" id="findings-table">
+      <thead><tr>
+        <th data-sort>Host</th><th data-sort>Path</th><th data-sort>Status</th>
+        <th data-sort>Length</th><th data-sort>Server</th><th data-sort>Title</th><th></th>
+      </tr></thead>
+      <tbody id="findings-body">
+        {% for f in findings %}
+        <tr data-fid="{{ f.id }}" data-host="{{ f.target.host if f.target else '' }}"
+            data-code="{{ f.status_code if f.status_code is not none else '' }}"
+            data-dead="{{ '1' if f.status_code is none else '0' }}"
+            data-waf="{{ '1' if (f.target and f.target.last_waf) else '0' }}"
+            data-len="{{ f.content_length if f.content_length is not none else '' }}"
+            data-tid="{{ f.target_id }}" data-path="{{ f.path }}">
+          <td class="sensitive">{% if f.target %}<a href="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=f.target_id) }}">{{ f.target.host }}</a>{% endif %}</td>
+          <td class="sensitive mono"><a href="{{ (f.target.base_url if f.target else '') ~ f.path }}" target="_blank" rel="noopener">{{ f.path }}</a></td>
+          <td>{% if f.status_code %}<span class="badge s{{ (f.status_code // 100) }}xx">{{ f.status_code }}</span>{% else %}<span class="badge dead">dead</span>{% endif %}</td>
+          <td class="mono">{{ f.content_length if f.content_length is not none else "" }}</td>
+          <td class="muted">{{ (f.extra_json or {}).get("server") or "" }}</td>
+          <td class="muted sensitive">{{ (f.extra_json or {}).get("title") or "" }}</td>
+          <td class="row-actions">
+            <button class="btn small resp-btn" data-tid="{{ f.target_id }}" data-path="{{ f.path }}">Response</button>
+            <button class="copy" data-copy="{{ (f.target.base_url if f.target else '') ~ f.path }}">⧉</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ANALYSIS -->
+{% macro countbars(rows, cls='') %}
+  {% set maxc = rows[0][1] if rows else 1 %}
+  <div class="bars">
+    {% for label, cnt in rows %}
+    <div class="bar-row">
+      <span class="mono sensitive" style="width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ label }}</span>
+      <span class="bar {{ cls }}" style="width:{{ ((cnt / maxc) * 200) | int }}px; min-width:2px"></span>
+      <span class="muted">{{ cnt }}</span>
+    </div>
+    {% else %}<p class="muted">No data yet.</p>{% endfor %}
+  </div>
+{% endmacro %}
+<section class="tabpane" data-pane="analysis">
+  <div class="stat-strip">
+    <div class="stat"><div class="stat-num">{{ analysis.total }}</div><div class="stat-label">Subdomains</div></div>
+    <div class="stat"><div class="stat-num">{{ analysis.alive }}</div><div class="stat-label">Alive</div></div>
+    <div class="stat"><div class="stat-num">{{ analysis.dead }}</div><div class="stat-label">Dead</div></div>
+    <div class="stat"><div class="stat-num">{{ analysis.waf|length }}</div><div class="stat-label">WAF types</div></div>
+    <div class="stat"><div class="stat-num">{{ analysis.asn|length }}</div><div class="stat-label">ASNs</div></div>
+  </div>
+
+  <div class="grid-2">
+    <!-- ASN / ownership -->
+    <div class="card">
+      <h2>ASN / hosting <span class="muted">— who owns the IP space</span></h2>
+      {% if analysis.asn %}
+      <table class="data">
+        <thead><tr><th>ASN</th><th>Owner</th><th>Country</th><th>Hosts</th></tr></thead>
+        <tbody>
+          {% for a in analysis.asn %}
+          <tr>
+            <td class="mono"><a href="https://bgp.he.net/AS{{ a.asn }}" target="_blank" rel="noopener">AS{{ a.asn }}</a></td>
+            <td class="sensitive">{{ a.name }}</td>
+            <td class="muted">{{ a.country or "—" }}</td>
+            <td class="mono">{{ a.hosts }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No ASN data yet. Run <strong>Check all live</strong> — it resolves each subdomain's IP and looks up the owning ASN (via Team Cymru).</p>
+      {% endif %}
+    </div>
+
+    <!-- WAF -->
+    <div class="card">
+      <h2>WAF / CDN in use</h2>
+      {{ countbars(analysis.waf, 's4xx') }}
+    </div>
+
+    <!-- Tech -->
+    <div class="card">
+      <h2>Technologies</h2>
+      {{ countbars(analysis.tech, 's2xx') }}
+    </div>
+
+    <!-- Servers -->
+    <div class="card">
+      <h2>Servers</h2>
+      {{ countbars(analysis.server) }}
+    </div>
+
+    <!-- Country -->
+    <div class="card">
+      <h2>Countries</h2>
+      {{ countbars(analysis.country, 's3xx') }}
+    </div>
+
+    <!-- Status distribution -->
+    <div class="card">
+      <h2>Status codes <span class="muted">({{ stats.findings }} results)</span></h2>
+      <div id="status-bars" class="bars">
+        {% set maxc = status_dist[0][1] if status_dist else 1 %}
+        {% for label, cnt in status_dist %}
+        <div class="bar-row">
+          <span class="mono" style="width:52px">{{ label }}</span>
+          <span class="bar {{ 'bar-dead' if label == 'dead' else 's' ~ label[0] ~ 'xx' }}"
+                style="width:{{ ((cnt / maxc) * 200) | int }}px; min-width:2px"></span>
+          <span class="muted">{{ cnt }}</span>
+        </div>
+        {% else %}<p class="muted">No results yet.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SUBDOMAINS -->
+<section class="tabpane" data-pane="domains" id="domains">
+  <div class="card">
+    <h2>Add subdomains</h2>
+    <form method="post" action="{{ url_for('workspaces.add_targets', workspace_id=ws.id) }}"
+          enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="targets" rows="4" placeholder="app.example.com&#10;https://api.example.com&#10;mail.example.com:8443"></textarea>
+      <label>…or upload a list <input type="file" name="file" accept=".txt,.csv,.list,.lst"></label>
+      <p class="muted" style="font-size:12px">Subdomains are lowercased, de-duplicated against the existing set, and sorted on import.</p>
+      <button class="btn" type="submit">Import</button>
+    </form>
+  </div>
+
+  <div class="table-toolbar">
+    <h2>Subdomains (<span id="domain-count">{{ domains|length }}</span>/{{ domains|length }})</h2>
+    <div class="domain-filters">
+      <input type="text" id="domain-search" class="filter" placeholder="Filter host…">
+      <select id="filter-live">
+        <option value="">All</option><option value="up">Alive</option>
+        <option value="down">Dead</option><option value="na">Unchecked</option>
+      </select>
+      <select id="filter-status">
+        <option value="">Any status</option>
+        <option value="2">2xx</option><option value="3">3xx</option>
+        <option value="4">4xx</option><option value="5">5xx</option>
+      </select>
+      <form method="post" action="{{ url_for('workspaces.check_all', workspace_id=ws.id) }}" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn primary" type="submit" title="Runs the alive module across all subdomains (recorded + feeds Analysis)">Check all live ▶</button>
+      </form>
+    </div>
+  </div>
+  <div class="domain-grid">
+    {% for t in domains %}
+    <div class="domain-card status-{{ 'na' if t.last_alive is none else ('up' if t.last_alive else 'down') }}"
+         data-tid="{{ t.id }}" data-host="{{ t.host }}"
+         data-live="{{ 'na' if t.last_alive is none else ('up' if t.last_alive else 'down') }}"
+         data-code="{{ t.last_status_code if t.last_status_code is not none else '' }}">
+      <div class="dc-head">
+        <a class="dc-host sensitive mono" href="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">{{ t.host }}</a>
+        {% if t.last_alive is none %}
+          <span class="dc-status badge unchecked">unchecked</span>
+        {% elif t.last_status_code %}
+          <span class="dc-status badge s{{ t.last_status_code // 100 }}xx">{{ t.last_status_code }}</span>
+        {% else %}
+          <span class="dc-status badge dead">dead</span>
+        {% endif %}
+      </div>
+      <div class="dc-meta muted">
+        {{ t.scheme }}{% if t.port %}:{{ t.port }}{% endif %} ·
+        <span class="dc-checked">{% if t.last_checked_at %}checked {{ t.last_checked_at.strftime("%H:%M:%S") }}{% else %}not checked{% endif %}</span>
+      </div>
+      <div class="dc-waf">{% if t.last_waf %}<span class="chip waf">🛡 {{ t.last_waf }}</span>{% endif %}</div>
+      <div class="dc-server muted">{% if t.last_server %}<span class="dc-srv">{{ t.last_server }}</span>{% endif %}</div>
+      <div class="dc-title sensitive">{% if t.last_title %}{{ t.last_title }}{% endif %}</div>
+      <div class="dc-modules">
+        {% set ran = mod_runs.get(t.id, {}) %}
+        {% if ran %}
+          {% for m, dt in ran.items() %}
+          <span class="chip">{{ m }} <span class="muted">{{ dt.strftime("%m-%d %H:%M") }}</span></span>
+          {% endfor %}
+        {% else %}
+          <span class="muted" style="font-size:12px">no modules run yet</span>
+        {% endif %}
+      </div>
+      <div class="dc-actions">
+        <button class="btn small check-one" type="button">Check live</button>
+        <button class="copy" data-copy="{{ t.base_url }}">⧉ URL</button>
+      </div>
+    </div>
+    {% else %}
+    <p class="muted">No subdomains yet. Add some above.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- DIRECTORY FUZZING -->
+<section class="tabpane" data-pane="fuzz" id="fuzz">
+  <div class="card">
+    <h2>Settings</h2>
+    <form method="post" action="{{ url_for('workspaces.update_settings', workspace_id=ws.id) }}" class="note-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="inline">Proxy (Burp etc.)
+        <input name="proxy" value="{{ ws.proxy or '' }}" placeholder="http://127.0.0.1:8080" style="width:220px">
+      </label>
+      <button class="btn" type="submit">Save</button>
+      <span class="muted" style="font-size:12px">Applies to every request (alive checks, fuzzing, response viewer).</span>
+    </form>
+    <hr style="border-color:var(--border); margin:12px 0">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+      <form method="post" action="{{ url_for('workspaces.clear_ledger', workspace_id=ws.id) }}" style="margin:0"
+            onsubmit="return confirm('Clear the ENTIRE dedup ledger for this workspace? Every subdomain will be re-tested next fuzz.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn" type="submit">Clear dedup ledger</button>
+      </form>
+      <span class="muted" style="font-size:12px">Dedup remembers every path already tested per host so re-fuzzes skip them. Clear it (or use <strong>Force re-scan</strong>) to test everything again.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Directory fuzzing</h2>
+    <form method="post" action="{{ url_for('runs.start') }}" id="fuzz-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+      <input type="hidden" name="module" value="dirsearch">
+      <input type="hidden" name="cfg__bools" value="verbose,verify_tls,force">
+      <div class="fuzz-settings">
+        <label class="inline">Extensions <input name="cfg_extensions" value="php,html,txt" style="width:140px"></label>
+        <label class="inline">Recursion depth <input type="number" name="cfg_recursion_depth" value="2" style="width:70px"></label>
+        <label class="inline">Threads <input type="number" name="cfg_threads" value="20" style="width:70px"></label>
+        <label class="inline">Timeout <input type="number" name="cfg_timeout" value="8" style="width:70px"></label>
+        <label class="inline">Wordlist dir <input name="cfg_wordlist_dir" placeholder="(default: dicc.txt)" style="width:180px"></label>
+        <label class="inline"><input type="checkbox" name="cfg_verbose" checked> Verbose</label>
+        <label class="inline"><input type="checkbox" name="cfg_verify_tls"> Verify TLS</label>
+        <label class="inline" title="Ignore the dedup ledger and re-test every path"><input type="checkbox" name="cfg_force"> Force re-scan</label>
+      </div>
+      <p class="muted" style="font-size:12px">Default wordlist: dirsearch <strong>dicc.txt</strong> ({{ dicc_count }} entries). Certs ignored unless Verify TLS is on. By default already-tested paths are skipped (dedup) — tick <strong>Force re-scan</strong> to test everything again.</p>
+
+      <div class="table-toolbar" style="margin-top:10px">
+        <h2 style="margin:0">Select subdomains</h2>
+        <div class="domain-filters">
+          <button class="btn small" type="button" id="fz-all">Select all</button>
+          <button class="btn small" type="button" id="fz-alive">Select alive</button>
+          <button class="btn small" type="button" id="fz-clear">Clear</button>
+        </div>
+      </div>
+      <div class="fuzz-targets">
+        {% for t in domains %}
+        {% set cov = fuzz_cov.get(t.host) %}
+        <label class="fz-item" data-live="{{ 'up' if t.last_alive else ('na' if t.last_alive is none else 'down') }}">
+          <input type="checkbox" name="target_ids" value="{{ t.id }}">
+          <span class="sensitive mono">{{ t.host }}</span>
+          {% if t.last_alive %}<span class="badge s{{ (t.last_status_code or 200) // 100 }}xx" style="font-size:10px">{{ t.last_status_code }}</span>
+          {% elif t.last_alive is sameas false %}<span class="badge dead" style="font-size:10px">dead</span>{% endif %}
+          {% if cov %}<span class="chip" style="font-size:10px" title="Already fuzzed: {{ cov.paths }} base path(s), {{ '{:,}'.format(cov.words) }} words tested (dedup will skip)">✓ {{ cov.paths }} path{{ 's' if cov.paths != 1 }}</span>{% endif %}
+        </label>
+        {% else %}
+        <p class="muted">No subdomains yet — add some first.</p>
+        {% endfor %}
+      </div>
+      <button class="btn primary" type="submit" style="margin-top:12px">Start fuzzing ▶</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Live output <span class="live-dot" title="Live"></span></h2>
+    <pre id="fuzz-console" class="console">Waiting for a task… start one above and hits/logs stream here.</pre>
+    <p class="muted" style="font-size:12px">Hits stream live in all modes. Full verbose per-request logs also stream when Redis is enabled.</p>
+  </div>
+</section>
+
+<!-- RUNS -->
+<section class="tabpane" data-pane="runs">
+  <div class="card">
+    <h2>Tasks <span class="muted">— click one to view its output &amp; results</span></h2>
+    <table class="data">
+      <thead><tr><th>#</th><th>Module</th><th>Against</th><th>By</th><th>Status</th><th>Results</th><th>Started</th><th>Finished</th><th></th></tr></thead>
+      <tbody id="runs-full-body">
+        {% for r in runs %}
+        {% set scope = run_scope.get(r.id) %}
+        <tr data-run="{{ r.id }}">
+          <td>{{ r.id }}</td>
+          <td>{{ r.module }}</td>
+          <td class="sensitive">
+            {% if scope is none %}<span class="muted">all {{ domains|length }} subdomains</span>
+            {% elif scope|length == 1 %}<span class="mono">{{ scope[0] }}</span>
+            {% else %}<span class="mono" title="{{ scope|join(', ') }}">{{ scope[0] }} <span class="muted">+{{ scope|length - 1 }}</span></span>
+            {% endif %}
+          </td>
+          <td class="muted">{{ user_by_id.get(r.created_by, "—") }}</td>
+          <td><span class="badge run-{{ r.status }}">{{ r.status }}</span></td>
+          <td class="mono">{{ run_counts.get(r.id, 0) }}</td>
+          <td class="muted">{{ r.started_at.strftime("%m-%d %H:%M:%S") if r.started_at else "—" }}</td>
+          <td class="muted">{{ r.finished_at.strftime("%m-%d %H:%M:%S") if r.finished_at else "—" }}</td>
+          <td><a class="btn small" href="{{ url_for('workspaces.run_detail', workspace_id=ws.id, run_id=r.id) }}">View output</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="muted">No tasks yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- DANGER / WIPE (admin only) -->
+{% if current_user.is_admin %}
+<section class="tabpane" data-pane="danger">
+  <div class="card danger">
+    <h2>Wipe workspace</h2>
+    <p class="muted">Permanently deletes all subdomains, tasks, results, notes, and the dedup
+      ledger for this engagement. Type <strong class="sensitive">{{ ws.name }}</strong> to confirm.</p>
+    <form method="post" action="{{ url_for('workspaces.wipe', workspace_id=ws.id) }}"
+          onsubmit="return confirm('Wipe this workspace permanently?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input name="confirm" placeholder="workspace name" autocomplete="off">
+      <button class="btn danger-btn" type="submit">Wipe permanently</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+<script>window.THOTH = {
+  streamUrl: "{{ url_for('workspaces.stream', workspace_id=ws.id) }}",
+  baseUrl: "{{ url_for('workspaces.detail', workspace_id=ws.id) }}"
+};</script>
+{% endblock %}
+{% block modals %}
+<div id="resp-modal" class="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span id="resp-title" class="mono"></span>
+      <button class="modal-close" id="resp-close">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Headers</h3><pre id="resp-headers" class="console"></pre>
+      <h3>Body <span id="resp-meta" class="muted"></span></h3><pre id="resp-body" class="console"></pre>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/table.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stream.js') }}"></script>
+<script src="{{ url_for('static', filename='js/domains.js') }}"></script>
+<script src="{{ url_for('static', filename='js/results.js') }}"></script>
+<script src="{{ url_for('static', filename='js/fuzz.js') }}"></script>
+<script src="{{ url_for('static', filename='js/response.js') }}"></script>
+<script src="{{ url_for('static', filename='js/activity.js') }}"></script>
+{% endblock %}

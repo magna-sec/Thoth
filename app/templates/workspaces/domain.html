@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}{{ t.host }} · Thoth{% endblock %}
+{% block content %}
+<div class="page-head">
+  <a href="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#domains" class="muted">← {{ ws.name }}</a>
+</div>
+<div class="page-head">
+  <h1 class="sensitive mono">{{ t.host }}</h1>
+  {% if t.last_alive is none %}
+    <span class="badge unchecked">unchecked</span>
+  {% elif t.last_status_code %}
+    <span class="badge s{{ t.last_status_code // 100 }}xx">{{ t.last_status_code }}</span>
+  {% else %}
+    <span class="badge dead">dead</span>
+  {% endif %}
+  <button class="btn small check-one" data-standalone type="button"
+          data-check-url="{{ url_for('workspaces.check_domain', workspace_id=ws.id, target_id=t.id) }}">Check live</button>
+  <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+    <input type="hidden" name="target_id" value="{{ t.id }}">
+    <input type="hidden" name="module" value="alive">
+    <button class="btn small" type="submit">Run alive</button>
+  </form>
+  <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+    <input type="hidden" name="target_id" value="{{ t.id }}">
+    <input type="hidden" name="module" value="dirsearch">
+    <button class="btn small primary" type="submit" title="Directory fuzzing on this subdomain (skips already-tested paths)">Fuzz directories ▶</button>
+  </form>
+  <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+    <input type="hidden" name="target_id" value="{{ t.id }}">
+    <input type="hidden" name="module" value="dirsearch">
+    <input type="hidden" name="cfg__bools" value="force">
+    <input type="hidden" name="cfg_force" value="on">
+    <button class="btn small" type="submit" title="Re-test every path, ignoring the dedup ledger">Fuzz (force) ▶</button>
+  </form>
+  <form method="post" action="{{ url_for('workspaces.clear_ledger_domain', workspace_id=ws.id, target_id=t.id) }}" style="margin:0"
+        onsubmit="return confirm('Clear the dedup ledger for {{ t.host }}? Future fuzzes will re-test everything.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn small" type="submit" title="Forget which paths were already tested for this host">Clear ledger</button>
+  </form>
+</div>
+
+<div class="stat-strip">
+  <div class="stat">
+    <div class="stat-num mono" style="font-size:18px">{{ ips[0] if ips else "—" }}</div>
+    <div class="stat-label">Current IP{% if ips|length > 1 %} (+{{ ips|length - 1 }}){% endif %}</div>
+  </div>
+  <div class="stat"><div class="stat-num">{{ t.scheme }}{% if t.port %}:{{ t.port }}{% endif %}</div><div class="stat-label">Scheme</div></div>
+  <div class="stat"><div class="stat-num">{{ last_live.strftime("%m-%d %H:%M") if last_live else "—" }}</div><div class="stat-label">Last seen live</div></div>
+  <div class="stat"><div class="stat-num">{{ t.last_checked_at.strftime("%m-%d %H:%M") if t.last_checked_at else "—" }}</div><div class="stat-label">Last checked</div></div>
+  <div class="stat"><div class="stat-num">{{ total_findings }}</div><div class="stat-label">Findings</div></div>
+</div>
+
+<!-- Directory fuzz coverage (dedup ledger) -->
+<div class="card">
+  <h2>Directory fuzz coverage
+    <span class="muted">— what's already been fuzzed on this host</span></h2>
+  {% if coverage %}
+    <p class="muted" style="font-size:12px; margin-top:-4px">A normal <strong>Fuzz directories</strong> will <strong>skip</strong> these (dedup). Use <strong>Fuzz (force)</strong> or <strong>Clear ledger</strong> to re-test.</p>
+    <table class="data">
+      <thead><tr><th>Base path</th><th>Words tested</th><th>Last fuzzed</th></tr></thead>
+      <tbody>
+        {% for c in coverage %}
+        <tr>
+          <td class="mono sensitive">{{ c.parent }}</td>
+          <td class="mono">{{ "{:,}".format(c.words) }}</td>
+          <td class="muted">{{ c.last.strftime("%Y-%m-%d %H:%M") if c.last else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Not fuzzed yet — no paths in the dedup ledger for this host. A fuzz will test the full wordlist.</p>
+  {% endif %}
+</div>
+
+<div class="grid-2">
+  <!-- Fingerprints -->
+  <div class="card">
+    <h2>Fingerprints</h2>
+    {% if ips %}<div class="fp-row"><span class="fp-key">IP / DNS</span>
+      {% for ip in ips %}<span class="chip mono">{{ ip }}</span>{% endfor %}</div>{% endif %}
+    {% if t.asn %}<div class="fp-row"><span class="fp-key">ASN</span>
+      <a class="chip mono" href="https://bgp.he.net/AS{{ t.asn }}" target="_blank" rel="noopener">AS{{ t.asn }}</a>
+      <span class="chip sensitive">{{ t.asn_name }}</span>
+      {% if t.country %}<span class="chip">{{ t.country }}</span>{% endif %}</div>{% endif %}
+    {% if fingerprints.tech or fingerprints.servers or fingerprints.powered or fingerprints.waf %}
+      {% if fingerprints.waf %}<div class="fp-row"><span class="fp-key">WAF</span>
+        {% for x in fingerprints.waf %}<span class="chip waf">🛡 {{ x }}</span>{% endfor %}</div>{% endif %}
+      {% if fingerprints.tech %}<div class="fp-row"><span class="fp-key">Tech</span>
+        {% for x in fingerprints.tech %}<span class="chip tech">{{ x }}</span>{% endfor %}</div>{% endif %}
+      {% if fingerprints.servers %}<div class="fp-row"><span class="fp-key">Server</span>
+        {% for x in fingerprints.servers %}<span class="chip">{{ x }}</span>{% endfor %}</div>{% endif %}
+      {% if fingerprints.powered %}<div class="fp-row"><span class="fp-key">Powered-By</span>
+        {% for x in fingerprints.powered %}<span class="chip">{{ x }}</span>{% endfor %}</div>{% endif %}
+    {% else %}
+      <p class="muted">No fingerprints yet. Run the <strong>alive</strong> module (or fingerprint, once available) to populate this.</p>
+    {% endif %}
+  </div>
+
+  <!-- Module runs / dirsearches -->
+  <div class="card">
+    <h2>Modules run here</h2>
+    {% if module_runs %}
+      <table class="data">
+        <thead><tr><th>Module</th><th>When</th><th>Findings</th></tr></thead>
+        <tbody>
+          {% for r in module_runs %}
+          <tr><td>{{ r.module }}</td><td class="muted">{{ r.at.strftime("%Y-%m-%d %H:%M") }}</td><td class="mono">{{ r.count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No modules have produced findings for this domain yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Pages breakdown -->
+<div class="card">
+  <div class="table-toolbar">
+    <h2>Pages <span class="muted">({{ total_findings }} findings, {{ page_groups|length }} response groups)</span></h2>
+    <input type="text" id="page-filter" class="filter" placeholder="Filter paths…">
+  </div>
+  <p class="muted" style="font-size:12px">Responses are grouped by status + size so near-identical pages collapse into one row — expand to see paths.</p>
+  <table class="data">
+    <thead><tr><th>Status</th><th>Size</th><th>Paths</th><th></th></tr></thead>
+    <tbody id="page-groups">
+      {% for g in page_groups %}
+      <tr class="group-row" data-paths="{{ g.paths | map(attribute='path') | join(' ') }}">
+        <td>{% if g.status %}<span class="badge s{{ g.status // 100 }}xx">{{ g.status }}</span>{% else %}<span class="badge dead">dead</span>{% endif %}</td>
+        <td class="mono">{{ g.length if g.length is not none else "" }}</td>
+        <td class="mono">{{ g.count }}</td>
+        <td>
+          <details>
+            <summary class="muted">show</summary>
+            <ul class="path-list">
+              {% for p in g.paths %}
+              <li class="sensitive mono"><a href="{{ t.base_url }}{{ p.path }}" target="_blank" rel="noopener">{{ p.path }}</a>
+                <button class="btn small resp-btn" data-tid="{{ t.id }}" data-path="{{ p.path }}">Response</button>
+                <button class="copy" data-copy="{{ t.base_url }}{{ p.path }}">⧉</button></li>
+              {% endfor %}
+              {% if g.truncated %}<li class="muted">…and {{ g.truncated }} more</li>{% endif %}
+            </ul>
+          </details>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">No findings yet. Run a module from the workspace Overview.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Notes -->
+<div class="card" id="notes">
+  <h2>Notes</h2>
+  <form method="post" action="{{ url_for('workspaces.add_note', workspace_id=ws.id, target_id=t.id) }}" class="note-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="path" placeholder="/optional/path" class="note-path mono">
+    <input name="body" placeholder="e.g. /bob/hi is interesting" required>
+    <button class="btn" type="submit">Add note</button>
+  </form>
+  <ul class="note-list">
+    {% for n in notes %}
+    <li>
+      {% if n.path %}<span class="chip mono sensitive">{{ n.path }}</span> {% endif %}
+      <span class="sensitive">{{ n.body }}</span>
+      <span class="muted" style="font-size:11px">· {{ n.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+    </li>
+    {% else %}
+    <li class="muted">No notes yet.</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<script>window.THOTH = { baseUrl: "{{ url_for('workspaces.detail', workspace_id=ws.id) }}" };</script>
+{% endblock %}
+{% block modals %}
+<div id="resp-modal" class="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span id="resp-title" class="mono"></span>
+      <button class="modal-close" id="resp-close">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Headers</h3><pre id="resp-headers" class="console"></pre>
+      <h3>Body <span id="resp-meta" class="muted"></span></h3><pre id="resp-body" class="console"></pre>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/domain-page.js') }}"></script>
+<script src="{{ url_for('static', filename='js/response.js') }}"></script>
+<script src="{{ url_for('static', filename='js/activity.js') }}"></script>
+{% endblock %}

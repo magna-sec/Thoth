@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Users · Thoth{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Users</h1></div>
+<div class="grid-2">
+  <div class="card">
+    <h2>Accounts</h2>
+    <table class="data">
+      <thead><tr><th>Email</th><th>Role</th><th></th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td class="mono">{{ u.email }}</td>
+          <td>{% if u.is_admin %}<span class="badge s2xx">admin</span>{% else %}<span class="badge unchecked">user</span>{% endif %}</td>
+          <td>
+            {% if u.id != current_user.id %}
+            <form method="post" action="{{ url_for('auth.delete_user', user_id=u.id) }}" style="margin:0"
+                  onsubmit="return confirm('Delete {{ u.email }}?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn small danger-btn" type="submit">Delete</button>
+            </form>
+            {% else %}<span class="muted">you</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Create user</h2>
+    <form method="post" action="{{ url_for('auth.users') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Email / username<input name="email" required></label>
+      <label>Password<input name="password" type="text" placeholder="leave blank to generate a strong one"></label>
+      <label class="inline"><input type="checkbox" name="is_admin"> Admin</label>
+      <button class="btn primary" type="submit">Create user</button>
+    </form>
+    <p class="muted" style="font-size:12px">
+      <strong>Non-admins</strong> can run modules, fuzz, and view results, but
+      <strong>cannot</strong> create workspaces or users, or wipe workspaces.
+      <strong>Admins</strong> can do all of the above.
+    </p>
+  </div>
+</div>
+{% endblock %}

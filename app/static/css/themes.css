@@ -1,0 +1,36 @@
+/* Six themes via CSS custom properties, switched by [data-theme] on <html>. */
+:root {
+  --bg: #0f1216; --panel: #171b21; --panel-2: #1e242c; --border: #2a323d;
+  --text: #e6edf3; --muted: #8b98a5; --accent: #4a9eff; --accent-2: #2d7fd6;
+  --ok: #3fb950; --warn: #d29922; --err: #f85149; --redir: #a371f7;
+  --mono: ui-monospace, "Cascadia Code", "Consolas", monospace;
+}
+:root[data-theme="dark"] {}
+
+:root[data-theme="professional"] {
+  --bg: #f4f6f9; --panel: #ffffff; --panel-2: #eef1f5; --border: #d5dbe2;
+  --text: #1b2733; --muted: #5b6b7b; --accent: #2d7fd6; --accent-2: #1f5fa8;
+  --ok: #1a7f37; --warn: #9a6700; --err: #cf222e; --redir: #8250df;
+}
+:root[data-theme="terminal"] {
+  --bg: #001100; --panel: #001a00; --panel-2: #002200; --border: #0a3d0a;
+  --text: #33ff66; --muted: #1f9f3f; --accent: #7dff9e; --accent-2: #33ff66;
+  --ok: #33ff66; --warn: #b6ff00; --err: #ff5555; --redir: #00ffcc;
+  --mono: "Cascadia Code", monospace;
+}
+:root[data-theme="synthwave"] {
+  --bg: #1a1030; --panel: #241645; --panel-2: #2e1b57; --border: #472a7a;
+  --text: #f7e8ff; --muted: #b39ddb; --accent: #ff5cf4; --accent-2: #00e5ff;
+  --ok: #4dffb8; --warn: #ffd166; --err: #ff4d6d; --redir: #c77dff;
+}
+:root[data-theme="classic"] {
+  --bg: #008080; --panel: #c0c0c0; --panel-2: #d4d0c8; --border: #808080;
+  --text: #000000; --muted: #404040; --accent: #000080; --accent-2: #000060;
+  --ok: #008000; --warn: #808000; --err: #800000; --redir: #000080;
+  --mono: "Courier New", monospace;
+}
+:root[data-theme="contrast"] {
+  --bg: #000000; --panel: #0a0a0a; --panel-2: #141414; --border: #ff00ff;
+  --text: #ffffff; --muted: #00ffff; --accent: #ff00ff; --accent-2: #00ffff;
+  --ok: #00ff00; --warn: #ffff00; --err: #ff0033; --redir: #ff00ff;
+}

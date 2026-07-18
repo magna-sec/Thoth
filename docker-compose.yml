@@ -1,0 +1,39 @@
+# OPTIONAL full multiplayer stack (Postgres + Redis + web + worker).
+# Not needed for local dev — see README "Native Windows" quick-start.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: thoth
+      POSTGRES_PASSWORD: thoth
+      POSTGRES_DB: thoth
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+
+  redis:
+    image: redis:7
+
+  web:
+    build: .
+    command: gunicorn -b 0.0.0.0:8000 --threads 8 wsgi:app
+    environment:
+      DATABASE_URL: postgresql+psycopg2://thoth:thoth@db:5432/thoth
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      REDIS_URL: redis://redis:6379/2
+      SECRET_KEY: change-me
+    ports: ["8000:8000"]
+    depends_on: [db, redis]
+
+  worker:
+    build: .
+    command: celery -A celery_worker.celery worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg2://thoth:thoth@db:5432/thoth
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      REDIS_URL: redis://redis:6379/2
+      SECRET_KEY: change-me
+    depends_on: [db, redis]
+
+volumes:
+  pgdata:
