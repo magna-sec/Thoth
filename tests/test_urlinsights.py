@@ -1,7 +1,71 @@
 """Shortlisting the interesting URLs on a host: parameters, keywords, and flags."""
 from app.extensions import db
 from app.models import Finding, Target
-from app.urlinsights import analyse, classify, keywords, param_names, split_url
+from app.urlinsights import (analyse, build_tree, classify, keywords, param_names,
+                             split_url)
+
+
+def _names(nodes):
+    return [n["name"] for n in nodes]
+
+
+def test_tree_nests_by_path_segment():
+    tree, stats = build_tree([
+        ("/page", 200, 10),
+        ("/page/index.html", 200, 20),
+        ("/another/hello", 200, 30),
+        ("/another/hello/index.html", 200, 40),
+    ])
+    assert _names(tree) == ["another", "page"]
+    another = tree[0]
+    assert _names(another["children"]) == ["hello"]
+    hello = another["children"][0]
+    assert _names(hello["children"]) == ["index.html"]
+    assert hello["path"] == "/another/hello"
+    assert stats["top_level"] == 2
+
+
+def test_tree_marks_real_findings_vs_inferred_parents():
+    tree, _ = build_tree([("/admin/users", 200, 5)])   # /admin was never itself a hit
+    admin = tree[0]
+    assert admin["endpoint"] is False and admin["status"] is None
+    assert admin["children"][0]["endpoint"] is True
+
+
+def test_tree_totals_roll_up():
+    tree, _ = build_tree([
+        ("/a", 200, 1), ("/a/b", 200, 1), ("/a/b/c", 200, 1), ("/z", 404, 1),
+    ])
+    a = [n for n in tree if n["name"] == "a"][0]
+    assert a["total"] == 3          # itself plus two descendants
+    assert [n for n in tree if n["name"] == "z"][0]["total"] == 1
+
+
+def test_tree_sorts_directories_first():
+    tree, _ = build_tree([("/zeta/x", 200, 1), ("/alpha", 200, 1)])
+    assert _names(tree) == ["zeta", "alpha"]  # zeta has children, so it leads
+
+
+def test_tree_ignores_query_strings_and_caps_nodes():
+    tree, _ = build_tree([("/s?q=1", 200, 1)])
+    assert _names(tree) == ["s"]
+    _, stats = build_tree([(f"/deep{i}/x", 200, 1) for i in range(50)], max_nodes=10)
+    assert stats["nodes"] == 10 and stats["truncated"] > 0
+
+
+def test_domain_page_renders_the_tree(client, app, workspace):
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="tree.test", scheme="https")
+        db.session.add(t)
+        db.session.flush()
+        for path in ("/page", "/page/index.html", "/another/hello"):
+            db.session.add(Finding(workspace_id=workspace, target_id=t.id, path=path,
+                                   status_code=200))
+        db.session.commit()
+        tid = t.id
+    page = client.get(f"/workspaces/{workspace}/domains/{tid}").data.decode()
+    assert 'data-pane="tree"' in page
+    assert "Site tree" in page and "index.html" in page
 
 
 def test_split_url_handles_absolute_and_relative():

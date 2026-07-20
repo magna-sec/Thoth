@@ -40,7 +40,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="workspace_id" value="{{ ws.id }}">
           <input type="hidden" name="module" value="screenshot">
-          <button class="btn" type="submit" title="Headless-browser screenshot of every subdomain">Screenshot all 📷</button>
+          <button class="btn" type="submit" title="Headless-browser screenshot of every subdomain">Screenshot all 📷️</button>
         </form>
         <button class="btn tab-jump" data-goto="domains" type="button">Manage subdomains</button>
         <button class="btn tab-jump" data-goto="fuzz" type="button">Directory fuzzing</button>
@@ -270,7 +270,7 @@
         {{ t.scheme }}{% if t.port %}:{{ t.port }}{% endif %} ·
         <span class="dc-checked">{% if t.last_checked_at %}checked {{ t.last_checked_at.strftime("%H:%M:%S") }}{% else %}not checked{% endif %}</span>
       </div>
-      <div class="dc-waf">{% if t.last_waf %}<span class="chip waf">🛡 {{ t.last_waf }}</span>{% endif %}
+      <div class="dc-waf">{% if t.last_waf %}<span class="chip waf">🛡️ {{ t.last_waf }}</span>{% endif %}
         {% if t.open_port_list %}<span class="chip port dc-ports" title="Port(s) answering HTTP on this host">⚡ {{ t.open_port_list | join(', ') }}</span>{% endif %}</div>
       <div class="dc-server muted">{% if t.last_server %}<span class="dc-srv">{{ t.last_server }}</span>{% endif %}</div>
       <div class="dc-title sensitive">{% if t.last_title %}{{ t.last_title }}{% endif %}</div>
@@ -333,7 +333,7 @@
                data-shot="{{ '1' if shots.get(t.id) and shots[t.id].name else '0' }}">
           <input type="checkbox" name="target_ids" value="{{ t.id }}">
           <span class="sensitive mono">{{ t.host }}</span>
-          {% if shots.get(t.id) and shots[t.id].name %}<span class="chip" style="font-size:10px">📷</span>{% endif %}
+          {% if shots.get(t.id) and shots[t.id].name %}<span class="chip" style="font-size:10px">📷️</span>{% endif %}
         </label>
         {% else %}
         <p class="muted">No subdomains yet — add some first.</p>

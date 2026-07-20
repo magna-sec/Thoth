@@ -14,7 +14,7 @@
     <span class="badge dead">dead</span>
   {% endif %}
   {% for x in fingerprints.manual %}<span class="chip tech">{{ x }}</span>{% endfor %}
-  {% if t.last_waf %}<span class="chip waf">🛡 {{ t.last_waf }}</span>{% endif %}
+  {% if t.last_waf %}<span class="chip waf">🛡️ {{ t.last_waf }}</span>{% endif %}
   <a class="btn small" href="{{ t.base_url }}" target="_blank" rel="noopener">Open ↗</a>
   <button class="copy" data-copy="{{ t.base_url }}">⧉ URL</button>
 </div>
@@ -36,7 +36,7 @@
   {% endmacro %}
   {{ runbtn('alive', 'Run alive') }}
   {{ runbtn('dirsearch', 'Fuzz ▶', 'primary', 'Directory fuzzing on this subdomain (skips already-tested paths)') }}
-  {{ runbtn('screenshot', 'Screenshot 📷', '', 'Capture this site in a headless browser', true) }}
+  {{ runbtn('screenshot', 'Screenshot 📷️', '', 'Capture this site in a headless browser', true) }}
   <details class="more-actions">
     <summary class="btn small">More ▾</summary>
     <div class="more-menu">
@@ -70,6 +70,7 @@
 <div class="tabs" data-tabs>
   <button class="tab active" data-tab="overview">Overview</button>
   <button class="tab" data-tab="pages">Pages <span class="muted">{{ total_findings }}</span></button>
+  <button class="tab" data-tab="tree">Tree{% if tree_stats.top_level %} <span class="muted">{{ tree_stats.top_level }}</span>{% endif %}</button>
   <button class="tab" data-tab="urls">URLs{% if url_summary.notable %} <span class="muted">{{ url_summary.notable }}</span>{% endif %}</button>
   <button class="tab" data-tab="coverage">Fuzz coverage{% if coverage %} <span class="muted">{{ coverage|length }}</span>{% endif %}</button>
   <button class="tab" data-tab="import">Import</button>
@@ -114,7 +115,7 @@
         <span class="chip sensitive">{{ t.asn_name }}</span>
         {% if t.country %}<span class="chip">{{ t.country }}</span>{% endif %}</div>{% endif %}
       {% if fingerprints.waf %}<div class="fp-row"><span class="fp-key">WAF</span>
-        {% for x in fingerprints.waf %}<span class="chip waf">🛡 {{ x }}</span>{% endfor %}</div>{% endif %}
+        {% for x in fingerprints.waf %}<span class="chip waf">🛡️ {{ x }}</span>{% endfor %}</div>{% endif %}
       {% if fingerprints.tech %}<div class="fp-row"><span class="fp-key">Tech</span>
         {% for x in fingerprints.tech %}<span class="chip tech">{{ x }}</span>{% endfor %}</div>{% endif %}
       {% if fingerprints.servers %}<div class="fp-row"><span class="fp-key">Server</span>
@@ -235,6 +236,62 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+</section>
+
+<!-- SITE TREE -->
+{# Recursive: a node with children renders as a collapsible directory, a leaf as a link.
+   Only the top level is open by default — a fuzzed host is thousands of paths deep. #}
+{% macro treenode(n) %}
+<li>
+  {% if n.children %}
+    <details class="tree-dir" {% if n.depth == 0 %}open{% endif %}>
+      <summary>
+        <span class="mono sensitive">/{{ n.name }}</span>
+        <span class="muted tree-count">{{ n.total }}</span>
+        {% if n.endpoint %}
+          {% if n.status %}<span class="badge s{{ n.status // 100 }}xx">{{ n.status }}</span>
+          {% else %}<span class="badge dead">dead</span>{% endif %}
+          <a href="{{ t.base_url }}{{ n.path }}" target="_blank" rel="noopener" title="Open {{ n.path }}">↗</a>
+        {% endif %}
+      </summary>
+      <ul class="tree">
+        {% for c in n.children %}{{ treenode(c) }}{% endfor %}
+      </ul>
+    </details>
+  {% else %}
+    <span class="tree-leaf">
+      <a class="mono sensitive" href="{{ t.base_url }}{{ n.path }}" target="_blank" rel="noopener">/{{ n.name }}</a>
+      {% if n.status %}<span class="badge s{{ n.status // 100 }}xx">{{ n.status }}</span>
+      {% else %}<span class="badge dead">dead</span>{% endif %}
+      {% if n.length is not none %}<span class="muted mono">{{ n.length }}</span>{% endif %}
+      <button class="btn small resp-btn" data-tid="{{ t.id }}" data-path="{{ n.path }}">Response</button>
+      <button class="copy" data-copy="{{ t.base_url }}{{ n.path }}">⧉</button>
+    </span>
+  {% endif %}
+</li>
+{% endmacro %}
+
+<section class="tabpane" data-pane="tree">
+  <div class="card">
+    <div class="table-toolbar">
+      <h2>Site tree <span class="muted">— {{ tree_stats.nodes }} node(s) from {{ total_findings }} finding(s)</span></h2>
+      <div class="domain-filters">
+        <button class="btn small" type="button" id="tree-expand">Expand all</button>
+        <button class="btn small" type="button" id="tree-collapse">Collapse all</button>
+      </div>
+    </div>
+    <p class="muted" style="font-size:12px">Paths folded into the directory structure they imply. A count is the findings at or under that branch; a directory also carrying a badge was itself a hit, not just an inferred parent.</p>
+    {% if tree %}
+    <ul class="tree tree-root">
+      {% for n in tree %}{{ treenode(n) }}{% endfor %}
+    </ul>
+    {% if tree_stats.truncated %}
+    <p class="muted" style="font-size:12px">…{{ tree_stats.truncated }} path(s) omitted — tree capped for rendering.</p>
+    {% endif %}
+    {% else %}
+    <p class="muted">No paths yet. Fuzz this host, or import results you already have.</p>
+    {% endif %}
   </div>
 </section>
 

@@ -28,6 +28,7 @@ from ..modules.base import to_proxies
 from ..modules.screenshot import screenshot_dir
 from ..realtime import publish, subscribe
 from ..urlinsights import analyse as analyse_urls
+from ..urlinsights import build_tree
 
 DIRSEARCH_IMPORT = "dirsearch-import"  # Run.module for pasted results (not a live module)
 
@@ -423,6 +424,8 @@ def domain_detail(workspace_id, target_id):
     # name hints at what it does. Redirect targets count too — they often carry the params.
     url_rows, url_summary = analyse_urls(
         [f.path for f in findings] + [f.redirect for f in findings if f.redirect])
+    tree, tree_stats = build_tree(
+        (f.path, f.status_code, f.content_length) for f in findings)
 
     # Dedup coverage: which base paths have already been fuzzed on this host + how many
     # words each (so the operator knows a normal fuzz will be skipped).
@@ -444,7 +447,8 @@ def domain_detail(workspace_id, target_id):
                            shot=_screenshots(ws.id).get(t.id),
                            open_ports=[p.strip() for p in (t.open_ports or "").split(",")
                                        if p.strip()],
-                           url_rows=url_rows, url_summary=url_summary)
+                           url_rows=url_rows, url_summary=url_summary,
+                           tree=tree, tree_stats=tree_stats)
 
 
 def _resolve_ips(host, timeout=3.0):

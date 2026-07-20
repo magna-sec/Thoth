@@ -22,7 +22,7 @@
     const wafBox = card.querySelector('.dc-waf');
     if (wafBox) {
       const portList = (ports || []).join(', ');
-      wafBox.innerHTML = (waf ? `<span class="chip waf">🛡 ${esc(waf)}</span>` : '')
+      wafBox.innerHTML = (waf ? `<span class="chip waf">🛡️ ${esc(waf)}</span>` : '')
         + (portList ? `<span class="chip port dc-ports" title="Port(s) answering HTTP on this host">⚡ ${esc(portList)}</span>` : '');
     }
     applyFilters();

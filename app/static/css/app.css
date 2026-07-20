@@ -17,8 +17,8 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; gap: 18px; padding: 10px 18px;
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
-.brand { font-weight: 700; font-size: 16px; }
-.brand .glyph { color: var(--accent); }
+.brand { font-weight: 700; font-size: 16px; display: inline-flex; align-items: center; gap: 8px; }
+.brand .glyph { width: 22px; height: 22px; flex: none; color: var(--accent); }
 .topnav { display: flex; gap: 14px; }
 .controls { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .controls .ctl { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
@@ -153,6 +153,24 @@ a.dc-host:hover { color: var(--accent); }
 .fz-item { display: flex; align-items: center; gap: 6px; margin: 0; padding: 2px 0; }
 .fz-item input { width: auto; }
 .row-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+
+/* Site tree — nested paths with a guide rail down each level. */
+.tree { list-style: none; margin: 0; padding: 0 0 0 14px; }
+.tree-root { padding-left: 0; max-height: 620px; overflow: auto; }
+.tree li { position: relative; padding: 1px 0; }
+.tree ul { border-left: 1px solid var(--border); margin-left: 3px; }
+.tree-dir > summary { cursor: pointer; display: flex; align-items: center; gap: 7px; padding: 1px 0; border-radius: 4px; list-style: none; }
+.tree-dir > summary:hover { background: var(--panel-2); }
+/* display:flex on a <summary> suppresses the native disclosure marker in Chrome, so
+   draw our own — otherwise nothing signals that a directory can be opened. It's a plain
+   ASCII-safe triangle, not an emoji: no font coverage to depend on. */
+.tree-dir > summary::-webkit-details-marker { display: none; }
+.tree-dir > summary::before { content: "▸"; color: var(--muted); width: 10px; flex: none; transition: transform .12s; }
+.tree-dir[open] > summary::before { content: "▾"; }
+.tree-count { font-size: 11px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 0 6px; }
+.tree-leaf { display: flex; align-items: center; gap: 7px; padding-left: 14px; }
+.tree-leaf .btn.small, .tree-leaf .copy { visibility: hidden; }
+.tree li:hover > .tree-leaf .btn.small, .tree li:hover > .tree-leaf .copy { visibility: visible; }
 
 /* Subdomain action row — was a wall of seven buttons; secondary ones fold into "More". */
 .action-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; }

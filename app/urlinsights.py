@@ -50,6 +50,67 @@ ID_PARAMS = {"id", "uid", "user", "userid", "user_id", "account", "account_id", 
 _DYNAMIC_EXT = re.compile(r"\.(php|aspx?|jspx?|cfm|do|action|py|rb|pl|cgi)$", re.I)
 
 
+def build_tree(entries, max_nodes=5000):
+    """Fold flat paths into a directory tree.
+
+    A fuzz returns paths, but a site has *shape* — ``/admin/users/edit`` only means
+    something next to ``/admin/users/delete``. The Pages view groups by status+size, which
+    is right for spotting wildcard noise and wrong for seeing structure; this is the other
+    half of that.
+
+    `entries` is an iterable of ``(path, status_code, content_length)``. Returns
+    ``(children, stats)``: `children` are the top-level nodes, each
+    ``{name, path, depth, endpoint, status, length, children, total}`` where `total` counts
+    the real findings at or under that node, and `endpoint` marks a node that is itself a
+    finding (rather than an implied parent directory like ``/admin`` inferred from
+    ``/admin/x``). `max_nodes` bounds pathological input.
+    """
+    root = {"name": "", "path": "", "depth": -1, "endpoint": False, "status": None,
+            "length": None, "children": {}, "total": 0}
+    nodes = 0
+    truncated = 0
+
+    for path, status, length in entries:
+        clean = split_url(path)[0]
+        parts = [p for p in clean.split("/") if p]
+        node = root
+        acc = ""
+        for depth, part in enumerate(parts):
+            acc += "/" + part
+            child = node["children"].get(part)
+            if child is None:
+                if nodes >= max_nodes:
+                    truncated += 1
+                    node = None
+                    break
+                nodes += 1
+                child = {"name": part, "path": acc, "depth": depth, "endpoint": False,
+                         "status": None, "length": None, "children": {}, "total": 0}
+                node["children"][part] = child
+            node = child
+        if node is None:
+            continue
+        # The deepest node for this path is a real finding, not an inferred directory.
+        node["endpoint"] = True
+        if node["status"] is None:
+            node["status"] = status
+            node["length"] = length
+
+    def finish(node):
+        """dict children -> sorted list, and roll descendant counts upward."""
+        kids = [finish(c) for c in node["children"].values()]
+        # Directories first, then alphabetical — the shape reads top-down.
+        kids.sort(key=lambda c: (not c["children"], c["name"].lower()))
+        node["children"] = kids
+        node["total"] = (1 if node["endpoint"] else 0) + sum(c["total"] for c in kids)
+        return node
+
+    finish(root)
+    stats = {"nodes": nodes, "truncated": truncated,
+             "top_level": len(root["children"])}
+    return root["children"], stats
+
+
 def split_url(value):
     """Return (path, query) for an absolute URL or a bare path."""
     value = (value or "").strip()

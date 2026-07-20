@@ -14,7 +14,18 @@
        position:fixed resolves against the viewport, not this filtered box. -->
   <div id="app">
     <header class="topbar">
-      <div class="brand"><span class="glyph">𓁟</span> Thoth</div>
+      <!-- The mark is inline SVG, not the hieroglyph U+1305F: that lives in the Egyptian
+           Hieroglyphs block, which Windows covers via Segoe UI Historic but most Linux
+           installs have no font for, so it rendered as tofu. Same shape as favicon.svg;
+           currentColor keeps it themed, and the eye is a real hole (fill-rule) so it
+           works on light and dark backgrounds alike. -->
+      <div class="brand">
+        <svg class="glyph" viewBox="0 0 64 64" role="img" aria-label="Thoth" focusable="false">
+          <path fill="currentColor" fill-rule="evenodd"
+                d="M46 16a21 21 0 1 0 0 32 17 17 0 1 1 0-32zM44 24a3 3 0 1 0-6 0 3 3 0 0 0 6 0z"/>
+        </svg>
+        Thoth
+      </div>
       <nav class="topnav">
         {% if current_user.is_authenticated %}
           <a href="{{ url_for('workspaces.list_workspaces') }}">Workspaces</a>
@@ -26,7 +37,7 @@
         <input type="range" id="brightness" min="50" max="150" value="100" title="Brightness">
         <select id="theme-select" title="Theme">
           <option value="dark">Dark</option>
-          <option value="egyptian">Egyptian 𓁟</option>
+          <option value="egyptian">Egyptian</option>
           <option value="professional">Professional</option>
           <option value="terminal">Terminal</option>
           <option value="synthwave">Synthwave</option>

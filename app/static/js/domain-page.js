@@ -41,6 +41,12 @@
     window.Thoth.persist('url-filter', [uf], applyUrlFilter);
   }
 
+  // Site tree: bulk expand/collapse
+  const setTree = (open) => document.querySelectorAll('.tree-dir')
+    .forEach(d => { d.open = open; });
+  document.getElementById('tree-expand')?.addEventListener('click', () => setTree(true));
+  document.getElementById('tree-collapse')?.addEventListener('click', () => setTree(false));
+
   // Standalone "Check live" on the header
   const btn = document.querySelector('.check-one[data-standalone]');
   if (btn) btn.addEventListener('click', async () => {

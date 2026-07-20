@@ -91,7 +91,7 @@
       b.textContent = f.status_code != null ? f.status_code : 'dead';
     }
     const waf = card.querySelector('.dc-waf');
-    if (waf) waf.innerHTML = f.waf ? `<span class="chip waf">🛡 ${esc(f.waf)}</span>` : '';
+    if (waf) waf.innerHTML = f.waf ? `<span class="chip waf">🛡️ ${esc(f.waf)}</span>` : '';
     const srv = card.querySelector('.dc-server');
     if (srv) srv.innerHTML = extra.server ? `<span class="dc-srv">${esc(extra.server)}</span>` : '';
     const ttl = card.querySelector('.dc-title');
