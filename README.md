@@ -11,9 +11,16 @@ re-fuzzed twice — no duplicated work between runs or teammates.
 ## Features
 
 - **Workspaces** per engagement, with one-command **wipe**.
-- **Subdomains** — paste/upload a list (lowercased, de-duped, sorted); multi-threaded
-  **Check all live** colour-codes each, and sweeps **8080/8443** so alt-port admin panels
-  and dev copies get flagged on the host.
+- **Scope guard** — an allow/deny list per engagement, enforced before every request. See
+  [Scope](#scope).
+- **Discovery** — wildcard-aware DNS brute force that also permutates the subdomains you
+  already have. See [Discovery](#discovery).
+- **Subdomains** — paste/upload lists (lowercased, de-duped, sorted); multi-threaded
+  **Check all live** colour-codes each, sweeps **8080/8443** so alt-port admin panels and
+  dev copies get flagged, and falls back to `http` when `https` doesn't answer (so
+  port-80-only hosts aren't silently recorded dead).
+- **Export** — findings, host inventory, bare URLs or a parameter wordlist, as CSV / JSON /
+  Markdown / TXT. See [Exports](#exports).
 - **Enrichment** — resolves each host's **IP → ASN → owner/country** (Team Cymru) and detects
   **WAF/CDN**, server, and tech — with a fingerprint set **you can extend**. See
   [Fingerprints](#fingerprints).
@@ -56,6 +63,53 @@ The fuzzer records every path it requests per `(workspace, host, parent_path)`, 
 subdomain page shows coverage). To test anyway: **Force re-scan**, **Fuzz (force)**, or
 **Clear ledger**.
 
+## Scope
+
+Set an engagement scope in **Directory Fuzzing → Settings**. One rule per line:
+
+```
+example.com          exact host
+*.example.com        any subdomain, and the apex
+!vendor.example.com  explicit deny — always wins
+```
+
+No allow rules means no restriction (existing workspaces are unaffected). Once any allow
+rule exists, **only** matching hosts are ever requested. It's enforced centrally — in the
+task runner, the quick-check and the response viewer — rather than per module, so a new
+module can't forget it. Tasks skip out-of-scope hosts and say so in the run log, discovery
+drops them before resolving, and the Subdomains tab greys them with an
+**out of scope** badge.
+
+## Discovery
+
+**Subdomains → Discover** brute-forces DNS for a root domain. It is:
+
+- **wildcard-aware** — resolves random labels first and suppresses answers matching the
+  wildcard, so a `*.example.com` zone doesn't "find" your entire wordlist;
+- **permutation-driven** — `api.example.com` generates `api-dev`, `dev-api`, `api2`,
+  `api-staging`… which beats a generic list on estates named by humans;
+- **deduped** — every label tried is remembered per (workspace, domain), so re-runs and
+  teammates never repeat work, with a **Force** escape hatch;
+- **scope-bound** — a discovered name outside scope is dropped, not added.
+
+Custom resolvers and wordlists are optional; with neither, it uses the system resolver and
+a built-in list. Discovered hosts become subdomains, ready for alive/fuzz/screenshot.
+
+## Exports
+
+Four datasets × four formats, from the Results tab (whole workspace) or a subdomain's
+**Pages** tab (that host only):
+
+| Dataset | What you get |
+| --- | --- |
+| `findings` | every result: host, URL, status, size, redirect, server, title, tech, WAF |
+| `hosts` | the inventory: IP, ASN/owner/country, WAF, tech, tags, open ports, in-scope |
+| `urls` | bare URLs, one per line — the shape other tools eat |
+| `params` | distinct parameter names seen, commonest first — a param wordlist |
+
+CSV/JSON/Markdown for humans and spreadsheets, TXT (tab-separated, or plain lines for
+`urls`/`params`) for pipes.
+
 ## Fingerprints
 
 Alive checks label the tech behind each host (nginx, WordPress, Salesforce, Shopify…).
@@ -83,6 +137,11 @@ deleting a shared rule is admin-only.
 browser and stores the PNG under `DATA_DIR/workspaces/<id>/screenshots/`, so a workspace
 wipe takes the images with it. Like fuzzing, hosts already captured are skipped unless you
 tick **Re-capture**; hosts last seen dead are skipped by default.
+
+Captures are labelled when they look like a server default (**IIS default**, **nginx
+default**, **Parked**, **Placeholder**…) — these are the bulk of any estate and the least
+worth looking at, so the gallery can hide them in one click. Byte-identical captures are
+counted (`×12`), which collapses "the same holding page on twelve hosts" into one glance.
 
 A renderer must be present. Thoth prefers **Playwright** and falls back to any local
 **Chrome/Chromium/Edge/Brave**:
@@ -118,10 +177,12 @@ python -m pytest
 
 Temp DB + mock target server (no network), tasks run inline. Covers the fuzzer (hits,
 wildcard suppression, dedup + force, sizing, `%EXT%`), alive (fingerprint/WAF/concurrency,
-alt-port sweep), custom fingerprint signatures (matching, management, access control),
-screenshots (capture bookkeeping, skip rules, image serving — against a stub renderer, so
-no browser needed), dirsearch import parsing, ASN parsing, and routes (import,
-wipe-cascade, access control, filters).
+alt-port sweep, scheme fallback), the scope guard (matching rules and that nothing out of
+scope is requested), DNS discovery (wildcard suppression, permutations, dedup, scope) with
+a fake resolver, exports (all datasets and formats), custom fingerprint signatures,
+default-page detection, screenshots (capture bookkeeping, skip rules, image serving —
+against a stub renderer, so no browser needed), dirsearch import parsing, URL/tree
+analysis, ASN parsing, and routes (import, wipe-cascade, access control, filters).
 
 ## Credits
 

@@ -52,6 +52,20 @@ def run_module_task(run_id):
     if only:
         q = q.filter(Target.id.in_(only))
     targets = q.all()
+
+    # Scope is enforced here, once, rather than trusting each module to remember. Anything
+    # outside the engagement is dropped before a single request is made, and the run says
+    # so in its log rather than silently doing less than asked.
+    if ctx.scope.restricted or ctx.scope.deny:
+        allowed = [t for t in targets if ctx.scope.allows(t.host)]
+        blocked = [t for t in targets if t not in allowed]
+        if blocked:
+            ctx.log(f"Scope: skipping {len(blocked)} out-of-scope host(s) — "
+                    + ", ".join(sorted(t.host for t in blocked)[:10])
+                    + (" …" if len(blocked) > 10 else ""))
+        targets = allowed
+        if not targets and blocked:
+            ctx.log("Nothing in scope to run against.")
     try:
         cfg = run.config_json or {}
         if module.supports_batch:

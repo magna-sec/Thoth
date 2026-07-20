@@ -18,6 +18,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from ..auth import admin_required
+from .. import exports
 from ..extensions import db
 from ..importers import ImportError_, ledger_key, parse_dirsearch
 from ..models import (Finding, Note, Run, Target, TestedPath, User, Workspace,
@@ -25,8 +26,10 @@ from ..models import (Finding, Note, Run, Target, TestedPath, User, Workspace,
 from ..modules import all_modules, get_module
 from ..modules.alive import probe
 from ..modules.base import to_proxies
+from ..modules.dnsbrute import _domains
 from ..modules.screenshot import screenshot_dir
 from ..realtime import publish, subscribe
+from ..scope import for_workspace as scope_for
 from ..urlinsights import analyse as analyse_urls
 from ..urlinsights import build_tree
 
@@ -77,6 +80,8 @@ def detail(workspace_id):
     runs = Run.query.filter_by(workspace_id=ws.id).order_by(Run.created_at.desc()).all()
     stats = _stats(ws)
     domains = sorted(ws.targets, key=lambda t: t.host)
+    sc = scope_for(ws)
+    scope_out = {t.host for t in domains if not sc.allows(t.host)}
     mod_runs = _module_runs(ws.id)
     status_dist = _status_distribution(ws.id)
     analysis = _analysis(ws.id)
@@ -97,7 +102,10 @@ def detail(workspace_id):
                            domains=domains, mod_runs=mod_runs, status_dist=status_dist,
                            dicc_count=_default_wordlist_count(), run_counts=run_counts,
                            run_scope=run_scope, user_by_id=user_by_id, fuzz_cov=fuzz_cov,
-                           analysis=analysis, shots=_screenshots(ws.id))
+                           analysis=analysis, shots=_screenshots(ws.id),
+                           scope_out=scope_out,
+                           guessed_domain=(_domains(None, {t.host for t in domains})
+                                           or [""])[0])
 
 
 def _run_scope_hosts(run, host_by_id):
@@ -170,8 +178,63 @@ def _screenshots(workspace_id):
             "status_code": f.status_code,
             "title": extra.get("title"),
             "bytes": extra.get("bytes"),
+            "sha256": extra.get("sha256"),
+            "default_page": extra.get("default_page"),
         }
+    # Identical captures (byte-for-byte) are the same holding page on many hosts — count
+    # them so the gallery can say "shared by N" instead of showing 40 identical tiles.
+    dupes = Counter(s["sha256"] for s in latest.values() if s.get("sha256"))
+    for s in latest.values():
+        s["identical"] = dupes.get(s.get("sha256"), 0)
     return latest
+
+
+# ---------------------------------------------------------------------- exports
+
+
+@ws_bp.route("/<int:workspace_id>/export")
+@login_required
+def export(workspace_id):
+    """Download a dataset. `what` selects the data, `fmt` the shape, `target_id` narrows
+    it to one host. Everything is scoped to the workspace, so there's nothing to leak."""
+    ws = _get_member_workspace(workspace_id)
+    what = request.args.get("what", "findings")
+    fmt = request.args.get("fmt", "csv")
+    if what not in exports.DATASETS or fmt not in exports.FORMATS:
+        abort(400, "Unknown export type")
+
+    target = None
+    target_id = request.args.get("target_id", type=int)
+    if target_id:
+        target = db.session.get(Target, target_id)
+        if target is None or target.workspace_id != ws.id:
+            abort(404)
+
+    if what == "hosts":
+        targets = sorted(ws.targets, key=lambda t: t.host)
+        counts = dict(db.session.query(Finding.target_id, func.count(Finding.id))
+                      .filter(Finding.workspace_id == ws.id)
+                      .group_by(Finding.target_id).all())
+        columns, rows = exports.hosts_dataset(targets, counts, scope_for(ws))
+        payload = exports.render(columns, rows, fmt)
+    else:
+        q = Finding.query.filter_by(workspace_id=ws.id)
+        if target is not None:
+            q = q.filter_by(target_id=target.id)
+        findings = q.order_by(Finding.target_id, Finding.path).all()
+        if what == "findings":
+            columns, rows = exports.findings_dataset(findings)
+            payload = exports.render(columns, rows, fmt)
+        elif what == "urls":
+            payload = exports.lines_payload(exports.urls_lines(findings), fmt)
+        else:  # params
+            payload = exports.lines_payload(exports.params_lines(findings), fmt)
+
+    name = exports.filename(ws.name, what, fmt, target.host if target else None)
+    return Response(payload, mimetype=exports.MIME[fmt], headers={
+        "Content-Disposition": f'attachment; filename="{name}"',
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 @ws_bp.route("/<int:workspace_id>/runs/<int:run_id>/rerun", methods=["POST"])
@@ -328,9 +391,9 @@ def _stats(ws):
 def add_targets(workspace_id):
     ws = _get_member_workspace(workspace_id)
     raw = request.form.get("targets", "")
-    upload = request.files.get("file")
-    if upload and upload.filename:
-        raw += "\n" + upload.read().decode("utf-8", errors="ignore")
+    for upload in request.files.getlist("file"):  # several lists at once is normal
+        if upload and upload.filename:
+            raw += "\n" + upload.read().decode("utf-8", errors="ignore") + "\n"
 
     # Normalize: lowercase host -> unique against the current set -> sorted insert.
     existing = {(t.host, t.scheme, t.port) for t in ws.targets}
@@ -484,9 +547,13 @@ def import_dirsearch(workspace_id, target_id):
         abort(404)
 
     raw = request.form.get("results", "")
-    upload = request.files.get("file")
-    if upload and upload.filename:
-        raw += "\n" + upload.read().decode("utf-8", errors="ignore")
+    # Multiple reports at once: a host is often fuzzed in several passes, and each pass
+    # gets its own file. They're concatenated and parsed as one, then deduped by path.
+    names = []
+    for upload in request.files.getlist("file"):
+        if upload and upload.filename:
+            names.append(upload.filename)
+            raw += "\n" + upload.read().decode("utf-8", errors="ignore") + "\n"
     try:
         rows, hosts = parse_dirsearch(raw)
     except ImportError_ as e:
@@ -496,8 +563,8 @@ def import_dirsearch(workspace_id, target_id):
 
     now = datetime.utcnow()
     run = Run(workspace_id=ws.id, module=DIRSEARCH_IMPORT,
-              config_json={"_targets": [t.id], "source": upload.filename
-                           if (upload and upload.filename) else "pasted"},
+              config_json={"_targets": [t.id],
+                           "source": ", ".join(names) if names else "pasted"},
               status="done", created_by=current_user.id, started_at=now, finished_at=now,
               progress_done=len(rows), progress_total=len(rows))
     db.session.add(run)
@@ -506,7 +573,8 @@ def import_dirsearch(workspace_id, target_id):
     # Existing ledger keys for this host, so we never violate the unique constraint.
     known = {(p, w) for p, w in db.session.query(TestedPath.parent_path, TestedPath.word)
              .filter_by(workspace_id=ws.id, host=t.host).all()}
-    log = [f"Importing {len(rows)} result(s) from dirsearch output into {t.host}"]
+    log = [f"Importing {len(rows)} result(s) from dirsearch output into {t.host}"
+           + (f" ({len(names)} file(s): {', '.join(names)})" if names else " (pasted)")]
     ledger_added = 0
     for row in sorted(rows, key=lambda r: r["path"]):
         db.session.add(Finding(
@@ -628,8 +696,16 @@ def activity(workspace_id):
 def update_settings(workspace_id):
     ws = _get_member_workspace(workspace_id)
     ws.proxy = request.form.get("proxy", "").strip() or None
+    if "scope" in request.form:
+        ws.scope = request.form.get("scope", "").strip() or None
     db.session.commit()
-    flash("Settings saved" + (f" · proxy {ws.proxy}" if ws.proxy else " · proxy cleared"), "info")
+    sc = scope_for(ws)
+    out = [t.host for t in ws.targets if not sc.allows(t.host)]
+    flash("Settings saved" + (f" · proxy {ws.proxy}" if ws.proxy else " · proxy cleared")
+          + (f" · scope: {len(sc.allow)} allow / {len(sc.deny)} deny rule(s)"
+             if (sc.allow or sc.deny) else " · scope: unrestricted")
+          + (f" · {len(out)} existing subdomain(s) now out of scope and will be skipped"
+             if out else ""), "info")
     return redirect(request.form.get("next")
                     or url_for("workspaces.detail", workspace_id=ws.id) + "#fuzz")
 
@@ -644,6 +720,9 @@ def view_response(workspace_id):
     t = db.session.get(Target, target_id)
     if t is None or t.workspace_id != ws.id:
         abort(404)
+    refusal = scope_for(ws).reason(t.host)
+    if refusal:
+        return jsonify({"url": t.base_url, "error": f"Out of scope — {refusal}"}), 403
     url = t.base_url + (path if path.startswith("/") else "/" + path)
     try:
         r = requests.get(url, timeout=12, allow_redirects=False, verify=False,
@@ -678,6 +757,10 @@ def check_domain(workspace_id, target_id):
     t = db.session.get(Target, target_id)
     if t is None or t.workspace_id != ws.id:
         abort(404)
+    refusal = scope_for(ws).reason(t.host)
+    if refusal:  # never probe a host the engagement doesn't cover
+        return jsonify({"target_id": t.id, "error": f"Out of scope — {refusal}",
+                        "out_of_scope": True}), 403
     probe(t, proxies=to_proxies(ws.proxy))  # updates t.last_* in place
     db.session.commit()
     return jsonify({

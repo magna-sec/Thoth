@@ -144,6 +144,29 @@ def test_import_is_idempotent_against_the_ledger(client, app, workspace):
         assert TestedPath.query.filter_by(workspace_id=workspace).count() == 4
 
 
+def test_import_accepts_multiple_files_at_once(client, app, workspace):
+    """A host is usually fuzzed in several passes, each with its own report file."""
+    import io
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="multi.test", scheme="https")
+        db.session.add(t)
+        db.session.commit()
+        tid = t.id
+
+    client.post(f"/workspaces/{workspace}/domains/{tid}/import-dirsearch",
+                data={"results": "", "file": [
+                    (io.BytesIO(b"200 - 1KB - /from-first\n"), "pass1.txt"),
+                    (io.BytesIO(b"403 - 278B - /from-second\n"), "pass2"),  # no extension
+                ]},
+                content_type="multipart/form-data", follow_redirects=True)
+
+    with app.app_context():
+        run = Run.query.filter_by(workspace_id=workspace).one()
+        assert {f.path for f in Finding.query.filter_by(run_id=run.id).all()} == {
+            "/from-first", "/from-second"}
+        assert run.config_json["source"] == "pass1.txt, pass2"
+
+
 def test_import_warns_about_a_different_host(client, app, workspace):
     with app.app_context():
         t = Target(workspace_id=workspace, host="mine.test", scheme="https")

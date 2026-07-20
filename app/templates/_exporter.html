@@ -1,0 +1,10 @@
+{# One control for every export: pick the dataset, pick the format. Imported "with
+   context" by the workspace and subdomain pages, which supply `ws`. #}
+{% macro exporter(what, label, hint='', target_id=None) %}
+<span class="export-group" title="{{ hint }}">
+  <span class="muted">{{ label }}</span>
+  {% for fmt in ("csv", "json", "md", "txt") %}
+  <a class="btn small" href="{{ url_for('workspaces.export', workspace_id=ws.id, what=what, fmt=fmt, target_id=target_id) }}">{{ fmt }}</a>
+  {% endfor %}
+</span>
+{% endmacro %}

@@ -25,6 +25,7 @@ from pathlib import Path
 
 from flask import current_app
 
+from ..defaultpages import classify as classify_default
 from ..extensions import db
 from ..models import Finding, Run
 from .alive import _do_probe, load_signatures
@@ -301,6 +302,12 @@ class ScreenshotModule(Module):
     def _record(self, ctx, target, path, probe, shot, error, **meta):
         """Emit one finding for a capture attempt (success or failure)."""
         extra = dict(probe["extra"], module=self.name, **meta)
+        # Label server defaults / parked pages so the gallery can push them aside — they
+        # are the bulk of any estate's captures and the least worth looking at.
+        label = classify_default(extra.get("title"), extra.get("server"),
+                                 probe.get("content_length"))
+        if label:
+            extra["default_page"] = label
         if shot:
             extra.update(screenshot=path.name, **shot)
             size = f"{shot['bytes'] / 1024:.0f}KB"

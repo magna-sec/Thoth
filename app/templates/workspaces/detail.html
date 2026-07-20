@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ ws.name }} · Thoth{% endblock %}
 {% block content %}
+{% from "_exporter.html" import exporter with context %}
 <div class="page-head">
   <h1 class="sensitive">{{ ws.name }}</h1>
   <span class="muted sensitive">{{ ws.client or "" }}</span>
@@ -88,6 +89,12 @@
         <label class="ctl"><input type="checkbox" id="rf-hidedead"> Hide dead</label>
         <button class="btn small" type="button" id="rf-reset" title="Filters are remembered across refreshes — this clears them">Reset filters</button>
       </div>
+    </div>
+    <div class="export-bar">
+      {{ exporter('findings', 'Export findings', 'Every result with status, size and fingerprints') }}
+      {{ exporter('urls', 'URLs', 'Bare URLs, one per line — pipe into another tool') }}
+      {{ exporter('params', 'Parameters', 'Distinct parameter names — a ready-made param wordlist') }}
+      <span class="muted" style="font-size:12px">Exports cover the whole workspace, not the on-screen filter.</span>
     </div>
     <table class="data sortable" id="findings-table">
       <thead><tr>
@@ -209,13 +216,39 @@
 <!-- SUBDOMAINS -->
 <section class="tabpane" data-pane="domains" id="domains">
   <div class="card">
+    <h2>Discover subdomains <span class="muted">— DNS brute force</span></h2>
+    <p class="muted" style="font-size:12px">
+      Detects wildcard DNS before it reports anything, derives extra candidates from the
+      subdomains you already have (<span class="mono">api</span> →
+      <span class="mono">api-dev</span>, <span class="mono">dev-api</span>,
+      <span class="mono">api2</span>…), and remembers every label it tried so a re-run
+      never repeats work. Discovered hosts are added as subdomains; anything outside the
+      engagement scope is dropped.
+    </p>
+    <form method="post" action="{{ url_for('runs.start') }}" class="note-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+      <input type="hidden" name="module" value="dnsbrute">
+      <input type="hidden" name="cfg__bools" value="permutations,force">
+      <input name="cfg_domain" placeholder="example.com" value="{{ guessed_domain or '' }}"
+             style="width:190px" title="Root domain(s), comma-separated">
+      <input name="cfg_wordlist" placeholder="wordlist file (optional)" style="width:180px">
+      <input name="cfg_resolvers" placeholder="resolvers e.g. 1.1.1.1" style="width:160px">
+      <label class="inline">Threads <input type="number" name="cfg_threads" value="40" style="width:70px"></label>
+      <label class="inline"><input type="checkbox" name="cfg_permutations" checked> Permutations</label>
+      <label class="inline" title="Re-test labels already tried"><input type="checkbox" name="cfg_force"> Force</label>
+      <button class="btn primary" type="submit">Discover ▶</button>
+    </form>
+  </div>
+
+  <div class="card">
     <h2>Add subdomains</h2>
     <form method="post" action="{{ url_for('workspaces.add_targets', workspace_id=ws.id) }}"
           enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <textarea name="targets" rows="4" placeholder="app.example.com&#10;https://api.example.com&#10;mail.example.com:8443"></textarea>
       <!-- No accept filter: subdomain lists are often extensionless. -->
-      <label>…or upload a list <input type="file" name="file"></label>
+      <label>…or upload list(s) <input type="file" name="file" multiple></label>
       <p class="muted" style="font-size:12px">Subdomains are lowercased, de-duplicated against the existing set, and sorted on import.</p>
       <button class="btn" type="submit">Import</button>
     </form>
@@ -251,6 +284,7 @@
         <option value="alt">Any alt port (not 80/443)</option>
       </select>
       <button class="btn small" type="button" id="df-reset" title="Filters are remembered across refreshes — this clears them">Reset filters</button>
+      {{ exporter('hosts', 'Export inventory', 'Subdomain inventory with IP/ASN, WAF, tech and scope') }}
       <form method="post" action="{{ url_for('workspaces.check_all', workspace_id=ws.id) }}" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn primary" type="submit" title="Runs the alive module across all subdomains (recorded + feeds Analysis)">Check all live ▶</button>
@@ -263,7 +297,8 @@
          data-tid="{{ t.id }}" data-host="{{ t.host }}"
          data-live="{{ 'na' if t.last_alive is none else ('up' if t.last_alive else 'down') }}"
          data-code="{{ t.last_status_code if t.last_status_code is not none else '' }}"
-         data-ports="{{ t.open_port_list | join(',') }}">
+         data-ports="{{ t.open_port_list | join(',') }}"
+         data-scope="{{ '0' if t.host in scope_out else '1' }}">
       <div class="dc-head">
         <a class="dc-host sensitive mono" href="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">{{ t.host }}</a>
         {% if t.last_alive is none %}
@@ -273,6 +308,7 @@
         {% else %}
           <span class="dc-status badge dead">dead</span>
         {% endif %}
+        {% if t.host in scope_out %}<span class="badge oos" title="Outside the engagement scope — Thoth will not request it">out of scope</span>{% endif %}
       </div>
       <div class="dc-meta muted">
         {{ t.scheme }}{% if t.port %}:{{ t.port }}{% endif %} ·
@@ -314,8 +350,14 @@
 <section class="tabpane" data-pane="shots" id="shots">
   <div class="card">
     <div class="table-toolbar">
-      <h2>Screenshots <span class="muted">— {{ shots|length }} of {{ domains|length }} subdomain(s) captured</span></h2>
-      <input type="text" id="shot-filter" class="filter" placeholder="Filter host…">
+      <h2>Screenshots <span class="muted">— <span id="shot-count">{{ shots|length }}</span> of {{ domains|length }} subdomain(s) shown</span></h2>
+      <input type="text" id="shot-filter" class="filter" placeholder="Filter host, title, IIS…">
+      <select id="shot-default" title="Server defaults and parked pages are the bulk of any estate">
+        <option value="">All pages</option>
+        <option value="real">Hide default pages</option>
+        <option value="default">Only default pages</option>
+      </select>
+      <button class="btn small" type="button" id="sh-reset">Reset</button>
     </div>
     <form method="post" action="{{ url_for('runs.start') }}" id="shot-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -364,7 +406,9 @@
     <div class="shot-grid" id="shot-grid">
       {% for t in domains if shots.get(t.id) %}
       {% set s = shots[t.id] %}
-      <figure class="shot" data-host="{{ t.host }}">
+      <figure class="shot" data-host="{{ t.host }}"
+              data-default="{{ '1' if s.default_page else '0' }}"
+              data-text="{{ t.host }} {{ s.title or '' }} {{ s.default_page or '' }}">
         <a href="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">
           {% if s.name %}
           <img loading="lazy" alt="Screenshot of {{ t.host }}"
@@ -376,6 +420,8 @@
         <figcaption>
           <span class="sensitive mono">{{ t.host }}</span>
           {% if s.status_code %}<span class="badge s{{ s.status_code // 100 }}xx">{{ s.status_code }}</span>{% endif %}
+          {% if s.default_page %}<span class="chip" title="Looks like a server default or holding page, not an application">{{ s.default_page }}</span>{% endif %}
+          {% if s.identical > 1 %}<span class="chip" title="This exact image appears on {{ s.identical }} hosts — the same holding page">×{{ s.identical }}</span>{% endif %}
           <span class="muted">{{ s.taken_at.strftime("%m-%d %H:%M") }}</span>
         </figcaption>
       </figure>
@@ -396,8 +442,21 @@
       <label class="inline">Proxy (Burp etc.)
         <input name="proxy" value="{{ ws.proxy or '' }}" placeholder="http://127.0.0.1:8080" style="width:220px">
       </label>
-      <button class="btn" type="submit">Save</button>
       <span class="muted" style="font-size:12px">Applies to every request (alive checks, fuzzing, response viewer).</span>
+      <div style="width:100%; margin-top:10px">
+        <label style="display:block; margin-bottom:4px"><strong>Engagement scope</strong>
+          <span class="muted" style="font-size:12px">— one rule per line. Leave empty for no restriction.</span></label>
+        <textarea name="scope" rows="4" class="mono" style="width:100%"
+                  placeholder="example.com&#10;*.example.com&#10;!vendor.example.com">{{ ws.scope or '' }}</textarea>
+        <p class="muted" style="font-size:12px; margin:4px 0 0">
+          <span class="mono">*.example.com</span> covers subdomains and the apex ·
+          <span class="mono">!host</span> excludes and always wins ·
+          any allow rule means <strong>only</strong> matching hosts are ever requested.
+          Enforced before every request — tasks skip out-of-scope hosts and say so in the log.
+          {% if scope_out %}<br><strong class="sensitive">{{ scope_out|length }} existing subdomain(s) are currently out of scope</strong> and will be skipped.{% endif %}
+        </p>
+      </div>
+      <button class="btn primary" type="submit" style="margin-top:8px">Save settings</button>
     </form>
     <hr style="border-color:var(--border); margin:12px 0">
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">

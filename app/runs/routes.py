@@ -39,8 +39,10 @@ def start():
     module = get_module(module_name)
     if module is None:
         abort(400, "Unknown module")
-    if not Target.query.filter_by(workspace_id=ws.id).count():
-        flash("Add subdomains before running a module.", "error")
+    # Discovery modules create targets, so they must be allowed to run without any.
+    if module.needs_targets and not Target.query.filter_by(workspace_id=ws.id).count():
+        flash("Add subdomains before running a module — or run discovery to find some.",
+              "error")
         return redirect(url_for("workspaces.detail", workspace_id=ws.id))
 
     # Build config from the module's declared schema. Only override a bool when the form
@@ -77,5 +79,6 @@ def start():
     if target_id and len(target_ids or []) == 1:
         return redirect(url_for("workspaces.domain_detail", workspace_id=ws.id,
                                 target_id=target_id))
-    anchor = {"dirsearch": "#fuzz", "screenshot": "#shots"}.get(module_name, "#findings")
+    anchor = {"dirsearch": "#fuzz", "screenshot": "#shots",
+              "dnsbrute": "#domains"}.get(module_name, "#findings")
     return redirect(url_for("workspaces.detail", workspace_id=ws.id) + anchor)

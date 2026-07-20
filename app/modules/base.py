@@ -32,10 +32,17 @@ class RunContext:
     """Handed to every module.run(). Persists findings and pushes live events."""
 
     def __init__(self, run):
+        from ..scope import for_workspace
         self.run = run
         self.workspace_id = run.workspace_id
         self.proxy = run.workspace.proxy if run.workspace else None
         self.proxies = to_proxies(self.proxy)
+        # Plain data, safe to consult from worker threads.
+        self.scope = for_workspace(run.workspace) if run.workspace else for_workspace(None)
+
+    def in_scope(self, host):
+        """Modules that discover new hosts must check them before requesting anything."""
+        return self.scope.allows(host)
 
     def set_progress(self, done, total):
         """Persist task progress (done/total requests) for the UI progress bar."""
@@ -84,6 +91,7 @@ class Module(ABC):
     description: str = ""
     reports_progress: bool = False  # True if the module drives ctx.set_progress itself
     supports_batch: bool = False     # True if the module implements run_all(targets, ...)
+    needs_targets: bool = True       # False for discovery modules, which create targets
 
     def run_all(self, targets, config, ctx):  # optional batch entry point
         raise NotImplementedError

@@ -100,6 +100,68 @@ def test_alive_can_skip_the_port_sweep(app, workspace, mock_target, monkeypatch)
         assert db.session.get(Target, tid).open_ports is None
 
 
+def test_scheme_order_prefers_the_port_convention():
+    from app.modules.alive import scheme_order
+    assert scheme_order("https", None) == ["https", "http"]
+    assert scheme_order("https", 80) == ["http", "https"]     # port beats stored scheme
+    assert scheme_order("https", 8080) == ["http", "https"]
+    assert scheme_order("http", 8443) == ["https", "http"]
+    assert scheme_order("http", None) == ["http", "https"]
+
+
+def test_http_only_host_is_found_and_scheme_corrected(app, workspace, mock_target,
+                                                      monkeypatch):
+    """A bare hostname is stored as https. An http-only site must still be discovered,
+    and the target's scheme corrected so later modules use the right URL."""
+    monkeypatch.setattr("app.modules.alive.enrich", lambda host: {})
+    with app.app_context():
+        # scheme=https, but the only listener is plain HTTP on the mock server's port.
+        t = Target(workspace_id=workspace, host="127.0.0.1", scheme="https",
+                   port=mock_target.port)
+        db.session.add(t)
+        run = Run(workspace_id=workspace, module="alive",
+                  config_json={"timeout": 3, "extra_ports": ""})
+        db.session.add(run)
+        db.session.commit()
+        tid, rid = t.id, run.id
+        run_module_task.run(rid)
+        db.session.remove()
+
+        t = db.session.get(Target, tid)
+        assert t.last_alive is True          # found, where before it was "dead"
+        assert t.scheme == "http"            # ...and the scheme was corrected
+        assert t.base_url == f"http://127.0.0.1:{mock_target.port}"
+        assert "switched to http" in (db.session.get(Run, rid).log or "")
+
+
+def test_scheme_fallback_can_be_disabled(app, workspace, mock_target, monkeypatch):
+    monkeypatch.setattr("app.modules.alive.enrich", lambda host: {})
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="127.0.0.1", scheme="https",
+                   port=mock_target.port)
+        db.session.add(t)
+        run = Run(workspace_id=workspace, module="alive",
+                  config_json={"timeout": 3, "extra_ports": "",
+                               "scheme_fallback": False})
+        db.session.add(run)
+        db.session.commit()
+        tid, rid = t.id, run.id
+        run_module_task.run(rid)
+        db.session.remove()
+        assert db.session.get(Target, tid).scheme == "https"   # left alone
+
+
+def test_quick_check_also_falls_back(app, workspace, mock_target):
+    from app.modules.alive import probe
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="127.0.0.1", scheme="https",
+                   port=mock_target.port)
+        db.session.add(t)
+        db.session.commit()
+        probe(t, timeout=3, extra_ports=())
+        assert t.last_alive is True and t.scheme == "http"
+
+
 def test_open_port_list_includes_the_primary_port():
     from app.models import Target
     t = Target(host="a.test", scheme="https", last_alive=True, open_ports="8080, 8443")

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t.host }} · Thoth{% endblock %}
 {% block content %}
+{% from "_exporter.html" import exporter with context %}
 <div class="page-head">
   <a href="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#domains" class="muted">← {{ ws.name }}</a>
 </div>
@@ -209,6 +210,11 @@
       </div>
     </div>
     <p class="muted" style="font-size:12px">Grouped by status + size, biggest group first, so a fuzz that returned thousands of identical responses stays one row — expand to see its paths.</p>
+    <div class="export-bar">
+      {{ exporter('findings', 'Export findings', 'This host only', t.id) }}
+      {{ exporter('urls', 'URLs', 'Bare URLs for this host, one per line', t.id) }}
+      {{ exporter('params', 'Parameters', 'Parameter names seen on this host', t.id) }}
+    </div>
     <table class="data">
       <thead><tr><th>Status</th><th>Size</th><th>Paths</th><th></th></tr></thead>
       <tbody id="page-groups">
@@ -393,8 +399,9 @@
       <textarea name="results" rows="10" class="mono" style="width:100%"
                 placeholder="[12:34:56] 200 -    1KB - /admin/&#10;[12:34:57] 301 -  169B  - /js  ->  {{ t.base_url }}/js/&#10;403 -  278B  - /.git/HEAD"></textarea>
       <div class="note-form" style="margin-top:8px">
-        <!-- No accept filter: dirsearch reports are routinely saved without an extension. -->
-        <input type="file" name="file">
+        <!-- No accept filter: dirsearch reports are routinely saved without an extension.
+             multiple: a host is usually fuzzed in several passes, one report each. -->
+        <input type="file" name="file" multiple>
         <button class="btn primary" type="submit">Import results</button>
       </div>
     </form>

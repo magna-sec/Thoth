@@ -14,14 +14,27 @@
 
   // No selection is meaningful here: it means "every subdomain".
   const filter = document.getElementById('shot-filter');
-  if (filter) {
+  const kind = document.getElementById('shot-default');
+  if (filter || kind) {
     const apply = () => {
-      const q = filter.value.trim().toLowerCase();
+      const q = (filter?.value || '').trim().toLowerCase();
+      const want = kind?.value || '';
+      let shown = 0;
       document.querySelectorAll('#shot-grid .shot').forEach((fig) => {
-        fig.hidden = q !== '' && !fig.dataset.host.toLowerCase().includes(q);
+        // data-text covers host, page title and the default-page label, so you can
+        // search "IIS" and find every server splash page.
+        const okText = !q || (fig.dataset.text || '').toLowerCase().includes(q);
+        const isDefault = fig.dataset.default === '1';
+        const okKind = !want || (want === 'default' ? isDefault : !isDefault);
+        fig.hidden = !(okText && okKind);
+        if (!fig.hidden) shown++;
       });
+      const count = document.getElementById('shot-count');
+      if (count) count.textContent = shown;
     };
-    filter.addEventListener('input', apply);
-    window.Thoth.persist('shot-filter', [filter], apply);
+    [filter, kind].forEach(el => el?.addEventListener('input', apply));
+    kind?.addEventListener('change', apply);
+    window.Thoth.persist('shot-filter', [filter, kind], apply,
+                         document.getElementById('sh-reset'));
   }
 })();

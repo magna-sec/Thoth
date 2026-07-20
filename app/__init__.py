@@ -84,6 +84,7 @@ def _lightweight_migrate():
     wanted = {
         "workspaces": {
             "proxy": "VARCHAR(255)",
+            "scope": "TEXT",
         },
         "runs": {
             "log": "TEXT",

@@ -32,6 +32,9 @@ class Workspace(db.Model):
     name = db.Column(db.String(120), nullable=False)
     client = db.Column(db.String(120))
     proxy = db.Column(db.String(255))  # e.g. http://127.0.0.1:8080 (Burp) for all requests
+    # Engagement scope — see app/scope.py. Empty means "no restriction" so existing
+    # workspaces are unaffected; once set, nothing outside it is ever requested.
+    scope = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
 
@@ -213,6 +216,28 @@ class Note(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     target = db.relationship("Target", back_populates="notes")
+
+
+class TestedName(db.Model):
+    """Dedup ledger for DNS brute-forcing — the name-space twin of TestedPath.
+
+    Deliberately a separate table rather than reusing TestedPath: that one is keyed by
+    parent_path and drives the "directory fuzz coverage" UI, so folding DNS labels into it
+    would make bogus base paths appear against a host.
+    """
+    __tablename__ = "tested_names"
+    __test__ = False  # not a pytest test class despite the "Test*" name
+    id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    domain = db.Column(db.String(255), nullable=False)  # the root that was brute-forced
+    label = db.Column(db.String(255), nullable=False)   # the label tried, e.g. "api"
+    resolved = db.Column(db.Boolean, default=False)
+    first_tested_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("workspace_id", "domain", "label", name="uq_tested_name"),
+    )
 
 
 class Signature(db.Model):

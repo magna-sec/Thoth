@@ -99,9 +99,55 @@ def _probe_ports(host, ports, timeout, verify, proxies, skip=(), signatures=None
     return found
 
 
-def _apply(target, result):
+# Ports whose scheme is not in doubt, so we try the right one first instead of guessing.
+_HTTP_PORTS = {80, 8000, 8008, 8080, 8081, 8880, 8888}
+_HTTPS_PORTS = {443, 8443, 9443, 4443}
+
+
+def _other(scheme):
+    return "http" if scheme == "https" else "https"
+
+
+def scheme_order(scheme, port):
+    """Which schemes to try, best first.
+
+    A bare hostname is stored as https (see _parse_target), so an http-only site would
+    otherwise probe once, fail, and be recorded dead — invisible to every later module.
+    The port, when given, is a stronger hint than the stored scheme.
+    """
+    first = scheme or "https"
+    if port in _HTTP_PORTS:
+        first = "http"
+    elif port in _HTTPS_PORTS:
+        first = "https"
+    return [first, _other(first)]
+
+
+def probe_target(host, port, scheme, timeout, verify, proxies, signatures=None,
+                 fallback=True):
+    """Probe a host, falling back to the other scheme when the first doesn't answer.
+
+    Returns ``(result, scheme_used)``. Pure network work — safe in worker threads.
+    """
+    order = scheme_order(scheme, port) if fallback else [scheme or "https"]
+    result = None
+    for candidate in order:
+        url = f"{candidate}://{host}" + (f":{port}" if port else "")
+        result = _do_probe(url, timeout, verify, proxies, signatures)
+        if result["status_code"] is not None:
+            result["extra"]["scheme"] = candidate
+            return result, candidate
+    result["extra"]["scheme"] = order[0]
+    return result, order[0]
+
+
+def _apply(target, result, scheme=None):
     """Write a probe result onto the target's cached last_* fields (main thread only)."""
     now = datetime.utcnow()
+    # Persist a successful fallback: every later module (fuzzing, screenshots, the
+    # response viewer) builds its URLs from target.scheme, so it has to be right.
+    if scheme and result["extra"].get("alive") and scheme != target.scheme:
+        target.scheme = scheme
     target.last_status_code = result["status_code"]
     target.last_alive = result["extra"]["alive"]
     target.last_checked_at = now
@@ -132,12 +178,13 @@ def probe(target, timeout=8, verify=False, proxies=None, extra_ports=DEFAULT_EXT
     Also sweeps the alt-HTTP ports so "Check live" marks 8080/8443 exposure.
     """
     signatures = load_signatures()
-    result = _do_probe(target.base_url, timeout, verify, proxies, signatures)
+    result, scheme = probe_target(target.host, target.port, target.scheme, timeout,
+                                  verify, proxies, signatures)
     if extra_ports:
         result["extra"]["open_ports"] = _probe_ports(
             target.host, extra_ports, timeout, verify, proxies,
             skip=(target.port,) if target.port else (), signatures=signatures)
-    _apply(target, result)
+    _apply(target, result, scheme)
     return result
 
 
@@ -268,6 +315,8 @@ class AliveModule(Module):
             {"name": "threads", "type": "number", "default": 30, "label": "Threads"},
             {"name": "extra_ports", "type": "text", "default": "8080,8443",
              "label": "Also check ports", "help": "Blank to check only the primary port"},
+            {"name": "scheme_fallback", "type": "bool", "default": True,
+             "label": "Try http when https doesn't answer (and vice versa)"},
         ]
 
     def run(self, target, config, ctx):
@@ -289,7 +338,7 @@ class AliveModule(Module):
         ports = parse_ports(config.get("extra_ports"))
         # Loaded once, on this thread: worker threads must not touch the ORM.
         signatures = load_signatures()
-        jobs = [(t.id, t.base_url, t.host, t.port) for t in targets]
+        jobs = [(t.id, t.host, t.port, t.scheme) for t in targets]
         by_id = {t.id: t for t in targets}
         total = len(jobs)
         ctx.set_progress(0, total)
@@ -298,28 +347,35 @@ class AliveModule(Module):
         if signatures:
             ctx.log(f"Using {len(signatures)} custom fingerprint signature(s)")
 
-        def work(url, host, own_port):
-            res = _do_probe(url, timeout, verify, proxies, signatures)
+        fallback = bool(config.get("scheme_fallback", True))
+
+        def work(host, own_port, own_scheme):
+            res, used = probe_target(host, own_port, own_scheme, timeout, verify,
+                                     proxies, signatures, fallback)
             if ports:
                 res["extra"]["open_ports"] = _probe_ports(
                     host, ports, timeout, verify, proxies,
                     skip=(own_port,) if own_port else (), signatures=signatures)
-            return res, enrich(host)
+            return res, enrich(host), used
 
         results = {}
         done = 0
         with ThreadPoolExecutor(max_workers=min(threads, max(1, total))) as ex:
-            futs = {ex.submit(work, url, host, own_port): tid
-                    for tid, url, host, own_port in jobs}
+            futs = {ex.submit(work, host, own_port, own_scheme): tid
+                    for tid, host, own_port, own_scheme in jobs}
             for fut in as_completed(futs):
                 results[futs[fut]] = fut.result()
                 done += 1
                 if done % 5 == 0:
                     ctx.set_progress(done, total)
 
-        for tid, (res, info) in results.items():
+        for tid, (res, info, used) in results.items():
             t = by_id[tid]
-            _apply(t, res)
+            was = t.scheme
+            _apply(t, res, used)
+            if t.scheme != was:
+                ctx.log(f"{t.host}: no answer over {was}, but {used} responded — "
+                        f"switched to {used}")
             _apply_enrich(t, info)
             ctx.finding(t, path="/", status_code=res["status_code"],
                         content_length=res["content_length"], redirect=res["redirect"],
