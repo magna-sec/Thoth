@@ -686,6 +686,8 @@ def check_domain(workspace_id, target_id):
         "alive": t.last_alive,
         "waf": t.last_waf,
         "open_ports": t.open_port_list,  # full list, so the port filter stays accurate
+        "tech": [x.strip() for x in (t.last_tech or "").split(",") if x.strip()],
+        "tags": t.manual_tech_list,      # hand-added labels, so the card keeps showing them
         "server": t.last_server,
         "title": t.last_title,
         "checked_at": t.last_checked_at.strftime("%H:%M:%S") if t.last_checked_at else None,

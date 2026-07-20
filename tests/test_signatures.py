@@ -186,6 +186,39 @@ def test_manual_tags_are_deduped_and_counted_in_analysis(client, app, workspace)
     assert "Salesforce" in client.get(f"/workspaces/{workspace}").data.decode()
 
 
+def test_tagged_host_is_visible_and_filterable_on_the_workspace_page(client, app,
+                                                                     workspace):
+    """A hand-tagged fingerprint has to show on the card AND be reachable by the filters —
+    it was stored correctly but invisible and unsearchable from the Subdomains tab."""
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="sf.test", scheme="https",
+                   last_alive=True, last_tech="nginx")
+        t.add_manual_tech(["Salesforce"])
+        db.session.add(t)
+        db.session.commit()
+
+    page = client.get(f"/workspaces/{workspace}").data.decode()
+    assert "dc-tags" in page                       # the card renders a tag row...
+    assert "Salesforce" in page                    # ...containing the hand-added label
+    assert 'id="filter-tech"' in page              # ...and a tech filter exists
+    assert '<option value="salesforce">' in page   # ...offering it, from the Analysis tally
+    assert 'value="nginx"' in page                 # detected tech is offered too
+
+
+def test_check_domain_returns_tech_and_tags(client, app, workspace, mock_target):
+    """The live re-check rewrites the card in place, so it must return the labels back."""
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="127.0.0.1", scheme="http",
+                   port=mock_target.port)
+        t.add_manual_tech(["Salesforce"])
+        db.session.add(t)
+        db.session.commit()
+        tid = t.id
+    data = client.post(f"/workspaces/{workspace}/domains/{tid}/check").get_json()
+    assert data["tags"] == ["Salesforce"]
+    assert isinstance(data["tech"], list)
+
+
 def test_custom_signature_reaches_a_real_probe(app, workspace, mock_target):
     """End to end: a rule added in the UI shows up as tech on the next check."""
     from app.modules.alive import probe

@@ -42,6 +42,13 @@
       if (!r.ok) return;
       const d = await r.json();
       colour(card, d.status_code, d.alive, d.checked_at, d.waf, d.open_ports);
+      const tags = card.querySelector('.dc-tags');
+      if (tags) {
+        tags.innerHTML = [
+          ...(d.tags || []).map(x => `<span class="chip tech" title="Tagged by hand">${esc(x)}</span>`),
+          ...(d.tech || []).map(x => `<span class="chip" title="Detected automatically">${esc(x)}</span>`),
+        ].join('');
+      }
       const srv = card.querySelector('.dc-server');
       if (srv) srv.innerHTML = d.server ? `<span class="dc-srv">${esc(d.server)}</span>` : '';
       const ttl = card.querySelector('.dc-title');
@@ -61,32 +68,45 @@
   const fLive = document.getElementById('filter-live');
   const fStatus = document.getElementById('filter-status');
   const fPort = document.getElementById('filter-port');
+  const fTech = document.getElementById('filter-tech');
   const count = document.getElementById('domain-count');
 
   const portsOf = (card) => (card.dataset.ports || '').split(',').filter(Boolean);
+
+  // Read from the rendered nodes rather than a data attribute so this stays correct
+  // after a live re-check rewrites the WAF/server/title in place. Deliberately excludes
+  // .dc-modules — otherwise searching "alive" would match every host that ran it.
+  const text = (card, sel) => (card.querySelector(sel)?.textContent || '');
+  const haystack = (card) => [
+    card.dataset.host, text(card, '.dc-tags'), text(card, '.dc-waf'),
+    text(card, '.dc-server'), text(card, '.dc-title'),
+  ].join(' ').toLowerCase();
+  const techOf = (card) => text(card, '.dc-tags').toLowerCase();
 
   function applyFilters() {
     const q = (search && search.value || '').toLowerCase();
     const live = fLive && fLive.value;
     const status = fStatus && fStatus.value;
     const port = fPort && fPort.value;
+    const tech = fTech && fTech.value;
     let shown = 0;
     document.querySelectorAll('.domain-card').forEach(card => {
-      const okHost = !q || (card.dataset.host || '').toLowerCase().includes(q);
+      const okHost = !q || haystack(card).includes(q);
+      const okTech = !tech || techOf(card).includes(tech);
       const okLive = !live || card.dataset.live === live;
       const okStatus = !status || (card.dataset.code || '').charAt(0) === status;
       const ports = portsOf(card);
       const okPort = !port || (port === 'alt'
         ? ports.some(p => p !== '80' && p !== '443')
         : ports.includes(port));
-      const show = okHost && okLive && okStatus && okPort;
+      const show = okHost && okLive && okStatus && okPort && okTech;
       card.style.display = show ? '' : 'none';
       if (show) shown++;
     });
     if (count) count.textContent = shown;
   }
   window.applyFilters = applyFilters;
-  const controls = [search, fLive, fStatus, fPort];
+  const controls = [search, fLive, fStatus, fPort, fTech];
   controls.forEach(el => {
     if (el) el.addEventListener('input', applyFilters);
     if (el) el.addEventListener('change', applyFilters);

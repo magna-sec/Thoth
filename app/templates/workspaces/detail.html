@@ -224,7 +224,7 @@
   <div class="table-toolbar">
     <h2>Subdomains (<span id="domain-count">{{ domains|length }}</span>/{{ domains|length }})</h2>
     <div class="domain-filters">
-      <input type="text" id="domain-search" class="filter" placeholder="Filter host…">
+      <input type="text" id="domain-search" class="filter" placeholder="Filter host, tech, WAF…">
       <select id="filter-live">
         <option value="">All</option><option value="up">Alive</option>
         <option value="down">Dead</option><option value="na">Unchecked</option>
@@ -233,6 +233,14 @@
         <option value="">Any status</option>
         <option value="2">2xx</option><option value="3">3xx</option>
         <option value="4">4xx</option><option value="5">5xx</option>
+      </select>
+      {# Options come from the Analysis tally, which already merges detected tech with
+         hand-added tags, so anything you can see on a card you can filter by. #}
+      <select id="filter-tech" title="Show only hosts carrying a fingerprint">
+        <option value="">Any tech</option>
+        {% for label, n in analysis.tech %}
+        <option value="{{ label|lower }}">{{ label }} ({{ n }})</option>
+        {% endfor %}
       </select>
       <select id="filter-port" title="Show only hosts answering on a given port">
         <option value="">Any port</option>
@@ -272,6 +280,13 @@
       </div>
       <div class="dc-waf">{% if t.last_waf %}<span class="chip waf">🛡️ {{ t.last_waf }}</span>{% endif %}
         {% if t.open_port_list %}<span class="chip port dc-ports" title="Port(s) answering HTTP on this host">⚡ {{ t.open_port_list | join(', ') }}</span>{% endif %}</div>
+      {# Fingerprints were only visible on the subdomain page, so a host you'd tagged
+         "Salesforce" looked identical to every other card — and was unsearchable. #}
+      <div class="dc-tags">
+        {# Accent = you asserted it; neutral = a signature matched it. Worth telling apart. #}
+        {% for x in t.manual_tech_list %}<span class="chip tech" title="Tagged by hand">{{ x }}</span>{% endfor %}
+        {% for x in (t.last_tech or "").split(",") if x.strip() %}<span class="chip" title="Detected automatically">{{ x.strip() }}</span>{% endfor %}
+      </div>
       <div class="dc-server muted">{% if t.last_server %}<span class="dc-srv">{{ t.last_server }}</span>{% endif %}</div>
       <div class="dc-title sensitive">{% if t.last_title %}{{ t.last_title }}{% endif %}</div>
       <div class="dc-modules">

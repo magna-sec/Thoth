@@ -121,6 +121,8 @@ a.dc-host:hover { color: var(--accent); }
 .chip.waf { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); border-color: transparent; }
 .dc-waf { min-height: 4px; margin-bottom: 2px; }
 .dc-waf .chip.waf { font-size: 11px; }
+.dc-tags { display: flex; flex-wrap: wrap; gap: 3px; margin: 3px 0 2px; }
+.dc-tags .chip { font-size: 10px; }
 .dc-server { font-size: 11px; min-height: 2px; }
 .dc-srv { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
 .dc-title { font-size: 12px; margin: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
