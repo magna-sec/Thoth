@@ -5,6 +5,15 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _abs_dir(value, default):
+    """Resolve a configured directory to an absolute path, relative paths being taken
+    from the project root rather than whatever the cwd happens to be."""
+    if not value:
+        return Path(default)
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (BASE_DIR / path).resolve()
+
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-change-me")
 
@@ -22,5 +31,9 @@ class Config:
     # Redis for realtime pub/sub. Optional — SSE falls back to DB polling.
     REDIS_URL = os.environ.get("REDIS_URL")
 
-    DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
+    # Always absolute. `.env` ships DATA_DIR=./data, and a relative path here breaks in two
+    # ways: it resolves against the cwd (which differs between the web server and the
+    # spawned task process) and Flask's send_from_directory resolves it against the app
+    # package dir instead — so files got written in one place and served from another.
+    DATA_DIR = _abs_dir(os.environ.get("DATA_DIR"), BASE_DIR / "data")
     WORDLIST_DIR = BASE_DIR / "wordlists"

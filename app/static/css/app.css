@@ -154,6 +154,20 @@ a.dc-host:hover { color: var(--accent); }
 .fz-item input { width: auto; }
 .row-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
 
+/* Subdomain action row — was a wall of seven buttons; secondary ones fold into "More". */
+.action-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; }
+.more-actions { position: relative; }
+.more-actions > summary { list-style: none; display: inline-block; }
+.more-actions > summary::-webkit-details-marker { display: none; }
+.more-menu { position: absolute; z-index: 20; right: 0; top: calc(100% + 4px); display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+.more-menu .btn { white-space: nowrap; width: 100%; }
+
+/* Hand-added host tags: chip with an inline remove button. */
+.chip.manual-tag { display: inline-flex; align-items: center; gap: 4px; }
+.chip.manual-tag form { display: inline; margin: 0; }
+.chip.manual-tag button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 0 0 2px; font-size: 13px; line-height: 1; opacity: .55; }
+.chip.manual-tag button:hover { opacity: 1; color: var(--err); }
+
 /* Filters are remembered across refreshes, so make an active one impossible to miss. */
 .btn.filtering { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); border-color: var(--warn); }
 

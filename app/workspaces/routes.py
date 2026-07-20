@@ -27,6 +27,7 @@ from ..modules.alive import probe
 from ..modules.base import to_proxies
 from ..modules.screenshot import screenshot_dir
 from ..realtime import publish, subscribe
+from ..urlinsights import analyse as analyse_urls
 
 DIRSEARCH_IMPORT = "dirsearch-import"  # Run.module for pasted results (not a live module)
 
@@ -266,7 +267,9 @@ def _analysis(workspace_id):
         for w in (t.last_waf or "").split(","):
             if w.strip():
                 waf[w.strip()] += 1
-        for x in (t.last_tech or "").split(","):
+        # Detected and hand-tagged tech both count — a label an operator confirmed is
+        # every bit as true as one a signature matched.
+        for x in (t.last_tech or "").split(",") + t.manual_tech_list:
             if x.strip():
                 tech[x.strip()] += 1
         if t.last_server:
@@ -416,6 +419,11 @@ def domain_detail(workspace_id, target_id):
 
     ips = _resolve_ips(t.host)
 
+    # Shortlist the URLs worth a human's attention: anything taking a parameter, or whose
+    # name hints at what it does. Redirect targets count too — they often carry the params.
+    url_rows, url_summary = analyse_urls(
+        [f.path for f in findings] + [f.redirect for f in findings if f.redirect])
+
     # Dedup coverage: which base paths have already been fuzzed on this host + how many
     # words each (so the operator knows a normal fuzz will be skipped).
     coverage = [{"parent": parent, "words": n, "last": last}
@@ -428,13 +436,15 @@ def domain_detail(workspace_id, target_id):
 
     return render_template("workspaces/domain.html", ws=ws, t=t, ips=ips,
                            fingerprints={"tech": sorted(tech), "servers": sorted(servers),
-                                         "powered": sorted(powered), "waf": sorted(waf)},
+                                         "powered": sorted(powered), "waf": sorted(waf),
+                                         "manual": t.manual_tech_list},
                            module_runs=module_runs, page_groups=page_groups,
                            total_findings=len(findings), last_live=last_live,
                            notes=t.notes, coverage=coverage,
                            shot=_screenshots(ws.id).get(t.id),
                            open_ports=[p.strip() for p in (t.open_ports or "").split(",")
-                                       if p.strip()])
+                                       if p.strip()],
+                           url_rows=url_rows, url_summary=url_summary)
 
 
 def _resolve_ips(host, timeout=3.0):
@@ -528,6 +538,48 @@ def import_dirsearch(workspace_id, target_id):
                 f"not {t.host}.")
     flash(msg, "error" if foreign else "info")
     return redirect(url_for("workspaces.run_detail", workspace_id=ws.id, run_id=run.id))
+
+
+@ws_bp.route("/<int:workspace_id>/domains/<int:target_id>/fingerprint", methods=["POST"])
+@login_required
+def add_manual_fingerprint(workspace_id, target_id):
+    """Tag this one host directly — for things you confirmed by hand and no pattern
+    would catch. Separate from a global signature, which teaches Thoth to detect it
+    everywhere (see the signatures blueprint)."""
+    ws = _get_member_workspace(workspace_id)
+    t = db.session.get(Target, target_id)
+    if t is None or t.workspace_id != ws.id:
+        abort(404)
+    labels = [x for x in request.form.get("labels", "").split(",") if x.strip()]
+    if not labels:
+        flash("Enter a fingerprint label, e.g. Salesforce.", "error")
+    else:
+        added = t.add_manual_tech(labels)
+        if added:
+            db.session.commit()
+            flash(f"Tagged {t.host}: {', '.join(added)}", "info")
+        elif len(", ".join(t.manual_tech_list + labels)) > 300:
+            flash("No room for more labels on this host — remove one first.", "error")
+        else:
+            flash("Already tagged with that.", "error")
+    return redirect(url_for("workspaces.domain_detail", workspace_id=ws.id,
+                            target_id=t.id) + "#overview")
+
+
+@ws_bp.route("/<int:workspace_id>/domains/<int:target_id>/fingerprint/remove",
+             methods=["POST"])
+@login_required
+def remove_manual_fingerprint(workspace_id, target_id):
+    ws = _get_member_workspace(workspace_id)
+    t = db.session.get(Target, target_id)
+    if t is None or t.workspace_id != ws.id:
+        abort(404)
+    label = request.form.get("label", "")
+    t.remove_manual_tech(label)
+    db.session.commit()
+    flash(f"Removed '{label.strip()}' from {t.host}.", "info")
+    return redirect(url_for("workspaces.domain_detail", workspace_id=ws.id,
+                            target_id=t.id) + "#overview")
 
 
 @ws_bp.route("/<int:workspace_id>/domains/<int:target_id>/notes", methods=["POST"])
@@ -629,7 +681,7 @@ def check_domain(workspace_id, target_id):
         "status_code": t.last_status_code,
         "alive": t.last_alive,
         "waf": t.last_waf,
-        "open_ports": t.open_ports,
+        "open_ports": t.open_port_list,  # full list, so the port filter stays accurate
         "server": t.last_server,
         "title": t.last_title,
         "checked_at": t.last_checked_at.strftime("%H:%M:%S") if t.last_checked_at else None,

@@ -79,6 +79,9 @@ class Target(db.Model):
     last_title = db.Column(db.String(300))  # <title> from last probe
     last_tech = db.Column(db.String(300))   # detected tech, comma-separated
     open_ports = db.Column(db.String(120))  # alt-HTTP ports answering, e.g. "8080, 8443"
+    # Operator-added labels for THIS host ("I logged in, it's Salesforce"). Kept apart
+    # from last_tech because every alive probe overwrites that; these must survive.
+    manual_tech = db.Column(db.String(300))
     ip = db.Column(db.String(64))           # resolved IP
     asn = db.Column(db.String(16))          # origin ASN (e.g. "15169")
     asn_name = db.Column(db.String(200))    # ASN owner (e.g. "GOOGLE, US")
@@ -93,6 +96,45 @@ class Target(db.Model):
         if self.port:
             return f"{self.scheme}://{self.host}:{self.port}"
         return f"{self.scheme}://{self.host}"
+
+    @property
+    def open_port_list(self):
+        """Every port known to answer HTTP: the primary one (when the host is live) plus
+        any alt ports the sweep found. Used for the "open port" filter."""
+        ports = []
+        if self.last_alive:
+            ports.append(self.port or (443 if self.scheme == "https" else 80))
+        for chunk in (self.open_ports or "").split(","):
+            chunk = chunk.strip()
+            if chunk.isdigit() and int(chunk) not in ports:
+                ports.append(int(chunk))
+        return sorted(ports)
+
+    @property
+    def manual_tech_list(self):
+        return [x.strip() for x in (self.manual_tech or "").split(",") if x.strip()]
+
+    def add_manual_tech(self, labels):
+        """Add operator labels, de-duped case-insensitively against what's already there.
+        Returns the labels actually added."""
+        current = self.manual_tech_list
+        lowered = {x.lower() for x in current}
+        added = []
+        for label in labels:
+            label = " ".join(label.split())[:60]
+            if label and label.lower() not in lowered:
+                lowered.add(label.lower())
+                current.append(label)
+                added.append(label)
+        joined = ", ".join(current)
+        if len(joined) > 300:  # column cap — keep what fits rather than truncating mid-label
+            return []
+        self.manual_tech = joined or None
+        return added
+
+    def remove_manual_tech(self, label):
+        kept = [x for x in self.manual_tech_list if x.lower() != label.strip().lower()]
+        self.manual_tech = ", ".join(kept) or None
 
 
 class Run(db.Model):

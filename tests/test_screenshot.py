@@ -4,6 +4,7 @@ The real renderer is swapped for a stub — CI has no browser, and what matters 
 module's bookkeeping, not Chromium's output.
 """
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -192,6 +193,36 @@ def test_gallery_and_domain_page_show_the_capture(client, app, workspace, stub_r
     assert 'data-pane="shots"' in page and shot_name(tid, rid) in page
     domain = client.get(f"/workspaces/{workspace}/domains/{tid}").data.decode()
     assert shot_name(tid, rid) in domain
+
+
+def test_relative_data_dir_still_serves_images(client, app, workspace, stub_renderer,
+                                               monkeypatch, tmp_path):
+    """Regression: `.env` ships DATA_DIR=./data (relative). Flask resolves a relative
+    send_from_directory against the app package dir, not the cwd, so captures were
+    written in one place and looked for in another — a 404 for a file that exists.
+    """
+    monkeypatch.chdir(tmp_path)
+    app.config["DATA_DIR"] = Path("./data")  # exactly what a relative env var produces
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="rel.test", scheme="https")
+        db.session.add(t)
+        db.session.commit()
+        tid = t.id
+
+    rid = _run(app, workspace)
+    name = shot_name(tid, rid)
+
+    with app.app_context():  # the capture really did land on disk
+        assert (screenshot_dir(workspace) / name).exists()
+    resp = client.get(f"/workspaces/{workspace}/screenshots/{name}")
+    assert resp.status_code == 200 and resp.data == PNG
+
+
+def test_config_forces_data_dir_absolute(monkeypatch):
+    from app.config import BASE_DIR, _abs_dir
+    assert _abs_dir("./data", None) == (BASE_DIR / "data").resolve()
+    assert _abs_dir("", BASE_DIR / "data") == BASE_DIR / "data"
+    assert _abs_dir(str(BASE_DIR / "x"), None).is_absolute()
 
 
 def test_chrome_binary_env_override(monkeypatch, tmp_path):

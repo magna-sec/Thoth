@@ -100,6 +100,31 @@ def test_alive_can_skip_the_port_sweep(app, workspace, mock_target, monkeypatch)
         assert db.session.get(Target, tid).open_ports is None
 
 
+def test_open_port_list_includes_the_primary_port():
+    from app.models import Target
+    t = Target(host="a.test", scheme="https", last_alive=True, open_ports="8080, 8443")
+    assert t.open_port_list == [443, 8080, 8443]      # implied 443 for a live https host
+    t.scheme, t.open_ports = "http", None
+    assert t.open_port_list == [80]
+    t.last_alive = False
+    assert t.open_port_list == []                     # dead: primary port isn't "open"
+    t.open_ports = "8080"
+    assert t.open_port_list == [8080]                 # ...but a found alt port still is
+    t.port, t.last_alive = 8000, True
+    assert t.open_port_list == [8000, 8080]           # explicit port wins over the scheme
+
+
+def test_port_filter_rendered_with_card_data(client, app, workspace):
+    from app.models import Target
+    with app.app_context():
+        db.session.add(Target(workspace_id=workspace, host="p.test", scheme="https",
+                              last_alive=True, open_ports="8080"))
+        db.session.commit()
+    page = client.get(f"/workspaces/{workspace}").data.decode()
+    assert 'id="filter-port"' in page
+    assert 'data-ports="443,8080"' in page
+
+
 def test_alive_is_multithreaded(app, workspace, mock_target, monkeypatch):
     # Avoid real DNS/ASN network during the timing test.
     monkeypatch.setattr("app.modules.alive.enrich", lambda host: {})

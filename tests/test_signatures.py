@@ -121,12 +121,69 @@ def test_add_from_domain_page_returns_there(client, app, workspace):
         tid = t.id
     back = f"/workspaces/{workspace}/domains/{tid}"
     assert "Add a signature" in client.get("/fingerprints/").data.decode()
-    assert "Add fingerprint" in client.get(back).data.decode()
+    page = client.get(back).data.decode()
+    assert "Tag host" in page        # per-host manual tag
+    assert "Add signature" in page   # ...and the global-rule form beside it
 
     resp = client.post("/fingerprints/add",
                        data={"label": "Salesforce", "field": "body", "needle": "force.com",
                              "next": back})
     assert resp.headers["Location"].endswith(back)
+
+
+def test_manual_tag_added_and_removed(client, app, workspace):
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="sf.test", scheme="https")
+        db.session.add(t)
+        db.session.commit()
+        tid = t.id
+    base = f"/workspaces/{workspace}/domains/{tid}"
+
+    client.post(f"{base}/fingerprint", data={"labels": "Salesforce, Okta"},
+                follow_redirects=True)
+    with app.app_context():
+        assert db.session.get(Target, tid).manual_tech_list == ["Salesforce", "Okta"]
+    assert "Salesforce" in client.get(base).data.decode()
+
+    client.post(f"{base}/fingerprint/remove", data={"label": "Okta"}, follow_redirects=True)
+    with app.app_context():
+        assert db.session.get(Target, tid).manual_tech_list == ["Salesforce"]
+
+
+def test_manual_tag_survives_an_alive_run(app, workspace, mock_target, monkeypatch):
+    """The whole point of a separate column: a re-scan must not wipe a hand-added tag."""
+    monkeypatch.setattr("app.modules.alive.enrich", lambda host: {})
+    from app.models import Run
+    from app.tasks import run_module_task
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="127.0.0.1", scheme="http",
+                   port=mock_target.port)
+        t.add_manual_tech(["Salesforce"])
+        run = Run(workspace_id=workspace, module="alive",
+                  config_json={"timeout": 3, "extra_ports": ""})
+        db.session.add_all([t, run])
+        db.session.commit()
+        tid, rid = t.id, run.id
+        run_module_task.run(rid)
+        db.session.remove()
+        assert db.session.get(Target, tid).manual_tech_list == ["Salesforce"]
+
+
+def test_manual_tags_are_deduped_and_counted_in_analysis(client, app, workspace):
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="sf.test", scheme="https")
+        db.session.add(t)
+        db.session.commit()
+        tid = t.id
+    base = f"/workspaces/{workspace}/domains/{tid}"
+    client.post(f"{base}/fingerprint", data={"labels": "Salesforce"}, follow_redirects=True)
+    page = client.post(f"{base}/fingerprint", data={"labels": "salesforce"},
+                       follow_redirects=True).data.decode()
+    assert "Already tagged" in page
+    with app.app_context():
+        assert db.session.get(Target, tid).manual_tech_list == ["Salesforce"]
+    # Hand-tagged tech counts in the workspace Analysis alongside detected tech.
+    assert "Salesforce" in client.get(f"/workspaces/{workspace}").data.decode()
 
 
 def test_custom_signature_reaches_a_real_probe(app, workspace, mock_target):

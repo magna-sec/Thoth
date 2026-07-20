@@ -13,45 +13,41 @@
   {% else %}
     <span class="badge dead">dead</span>
   {% endif %}
+  {% for x in fingerprints.manual %}<span class="chip tech">{{ x }}</span>{% endfor %}
+  {% if t.last_waf %}<span class="chip waf">🛡 {{ t.last_waf }}</span>{% endif %}
+  <a class="btn small" href="{{ t.base_url }}" target="_blank" rel="noopener">Open ↗</a>
+  <button class="copy" data-copy="{{ t.base_url }}">⧉ URL</button>
+</div>
+
+{# Actions were a wall of seven buttons; grouped and tucked into one row instead. #}
+<div class="action-bar">
   <button class="btn small check-one" data-standalone type="button"
           data-check-url="{{ url_for('workspaces.check_domain', workspace_id=ws.id, target_id=t.id) }}">Check live</button>
+  {% macro runbtn(module, label, cls='', title='', force=false) %}
   <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="workspace_id" value="{{ ws.id }}">
     <input type="hidden" name="target_id" value="{{ t.id }}">
-    <input type="hidden" name="module" value="alive">
-    <button class="btn small" type="submit">Run alive</button>
+    <input type="hidden" name="module" value="{{ module }}">
+    {% if force %}<input type="hidden" name="cfg__bools" value="force">
+    <input type="hidden" name="cfg_force" value="on">{% endif %}
+    <button class="btn small {{ cls }}" type="submit" title="{{ title }}">{{ label }}</button>
   </form>
-  <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="workspace_id" value="{{ ws.id }}">
-    <input type="hidden" name="target_id" value="{{ t.id }}">
-    <input type="hidden" name="module" value="dirsearch">
-    <button class="btn small primary" type="submit" title="Directory fuzzing on this subdomain (skips already-tested paths)">Fuzz directories ▶</button>
-  </form>
-  <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="workspace_id" value="{{ ws.id }}">
-    <input type="hidden" name="target_id" value="{{ t.id }}">
-    <input type="hidden" name="module" value="dirsearch">
-    <input type="hidden" name="cfg__bools" value="force">
-    <input type="hidden" name="cfg_force" value="on">
-    <button class="btn small" type="submit" title="Re-test every path, ignoring the dedup ledger">Fuzz (force) ▶</button>
-  </form>
-  <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="workspace_id" value="{{ ws.id }}">
-    <input type="hidden" name="target_id" value="{{ t.id }}">
-    <input type="hidden" name="module" value="screenshot">
-    <input type="hidden" name="cfg__bools" value="force">
-    <input type="hidden" name="cfg_force" value="on">
-    <button class="btn small" type="submit" title="Capture this site in a headless browser">Screenshot 📷</button>
-  </form>
-  <form method="post" action="{{ url_for('workspaces.clear_ledger_domain', workspace_id=ws.id, target_id=t.id) }}" style="margin:0"
-        onsubmit="return confirm('Clear the dedup ledger for {{ t.host }}? Future fuzzes will re-test everything.')">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button class="btn small" type="submit" title="Forget which paths were already tested for this host">Clear ledger</button>
-  </form>
+  {% endmacro %}
+  {{ runbtn('alive', 'Run alive') }}
+  {{ runbtn('dirsearch', 'Fuzz ▶', 'primary', 'Directory fuzzing on this subdomain (skips already-tested paths)') }}
+  {{ runbtn('screenshot', 'Screenshot 📷', '', 'Capture this site in a headless browser', true) }}
+  <details class="more-actions">
+    <summary class="btn small">More ▾</summary>
+    <div class="more-menu">
+      {{ runbtn('dirsearch', 'Fuzz (force) ▶', '', 'Re-test every path, ignoring the dedup ledger', true) }}
+      <form method="post" action="{{ url_for('workspaces.clear_ledger_domain', workspace_id=ws.id, target_id=t.id) }}" style="margin:0"
+            onsubmit="return confirm('Clear the dedup ledger for {{ t.host }}? Future fuzzes will re-test everything.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn small" type="submit" title="Forget which paths were already tested for this host">Clear ledger</button>
+      </form>
+    </div>
+  </details>
 </div>
 
 <div class="stat-strip">
@@ -69,70 +65,54 @@
   </div>
 </div>
 
-{% if open_ports %}
-<div class="card">
-  <h2>Open alt-HTTP ports <span class="muted">— found by the alive check</span></h2>
-  <div class="fp-row">
-    {% for p in open_ports %}
-    <a class="chip port mono" target="_blank" rel="noopener"
-       href="{{ ('https' if p.endswith('443') else 'http') }}://{{ t.host }}:{{ p }}">⚡ {{ t.host }}:{{ p }}</a>
-    {% endfor %}
-  </div>
-  <p class="muted" style="font-size:12px">These answered HTTP on a non-primary port — admin panels and dev copies live here. Add one as its own subdomain entry to fuzz it.</p>
-</div>
-{% endif %}
-
-{% if shot %}
-<div class="card">
-  <div class="table-toolbar">
-    <h2>Screenshot <span class="muted">— {{ shot.taken_at.strftime("%Y-%m-%d %H:%M") }}</span></h2>
-    <a class="btn small" href="{{ url_for('workspaces.run_detail', workspace_id=ws.id, run_id=shot.run_id) }}">View task</a>
-  </div>
-  {% if shot.name %}
-  <a href="{{ url_for('workspaces.screenshot_file', workspace_id=ws.id, name=shot.name) }}" target="_blank" rel="noopener">
-    <img class="shot-full" alt="Screenshot of {{ t.host }}"
-         src="{{ url_for('workspaces.screenshot_file', workspace_id=ws.id, name=shot.name) }}">
-  </a>
-  {% else %}
-  <p class="muted">Capture failed: <span class="mono">{{ shot.error }}</span></p>
-  {% endif %}
-</div>
-{% endif %}
-
-<!-- Directory fuzz coverage (dedup ledger) -->
-<div class="card">
-  <h2>Directory fuzz coverage
-    <span class="muted">— what's already been fuzzed on this host</span></h2>
-  {% if coverage %}
-    <p class="muted" style="font-size:12px; margin-top:-4px">A normal <strong>Fuzz directories</strong> will <strong>skip</strong> these (dedup). Use <strong>Fuzz (force)</strong> or <strong>Clear ledger</strong> to re-test.</p>
-    <table class="data">
-      <thead><tr><th>Base path</th><th>Words tested</th><th>Last fuzzed</th></tr></thead>
-      <tbody>
-        {% for c in coverage %}
-        <tr>
-          <td class="mono sensitive">{{ c.parent }}</td>
-          <td class="mono">{{ "{:,}".format(c.words) }}</td>
-          <td class="muted">{{ c.last.strftime("%Y-%m-%d %H:%M") if c.last else "—" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p class="muted">Not fuzzed yet — no paths in the dedup ledger for this host. A fuzz will test the full wordlist.</p>
-  {% endif %}
+{# A host with thousands of paths used to render every card at once. Tabbed, so the
+   Pages table only exists when you ask for it. #}
+<div class="tabs" data-tabs>
+  <button class="tab active" data-tab="overview">Overview</button>
+  <button class="tab" data-tab="pages">Pages <span class="muted">{{ total_findings }}</span></button>
+  <button class="tab" data-tab="urls">URLs{% if url_summary.notable %} <span class="muted">{{ url_summary.notable }}</span>{% endif %}</button>
+  <button class="tab" data-tab="coverage">Fuzz coverage{% if coverage %} <span class="muted">{{ coverage|length }}</span>{% endif %}</button>
+  <button class="tab" data-tab="import">Import</button>
+  <button class="tab" data-tab="notes">Notes{% if notes %} <span class="muted">{{ notes|length }}</span>{% endif %}</button>
 </div>
 
-<div class="grid-2">
-  <!-- Fingerprints -->
+<!-- OVERVIEW -->
+<section class="tabpane active" data-pane="overview">
+  {% if open_ports %}
   <div class="card">
-    <h2>Fingerprints</h2>
-    {% if ips %}<div class="fp-row"><span class="fp-key">IP / DNS</span>
-      {% for ip in ips %}<span class="chip mono">{{ ip }}</span>{% endfor %}</div>{% endif %}
-    {% if t.asn %}<div class="fp-row"><span class="fp-key">ASN</span>
-      <a class="chip mono" href="https://bgp.he.net/AS{{ t.asn }}" target="_blank" rel="noopener">AS{{ t.asn }}</a>
-      <span class="chip sensitive">{{ t.asn_name }}</span>
-      {% if t.country %}<span class="chip">{{ t.country }}</span>{% endif %}</div>{% endif %}
-    {% if fingerprints.tech or fingerprints.servers or fingerprints.powered or fingerprints.waf %}
+    <h2>Open alt-HTTP ports <span class="muted">— found by the alive check</span></h2>
+    <div class="fp-row">
+      {% for p in open_ports %}
+      <a class="chip port mono" target="_blank" rel="noopener"
+         href="{{ ('https' if p.endswith('443') else 'http') }}://{{ t.host }}:{{ p }}">⚡ {{ t.host }}:{{ p }}</a>
+      {% endfor %}
+    </div>
+    <p class="muted" style="font-size:12px">These answered HTTP on a non-primary port — admin panels and dev copies live here. Add one as its own subdomain entry to fuzz it.</p>
+  </div>
+  {% endif %}
+
+  <div class="grid-2">
+    <div class="card" id="fingerprints">
+      <h2>Fingerprints</h2>
+      {% if fingerprints.manual %}
+      <div class="fp-row"><span class="fp-key" title="Added by hand on this host — never overwritten by a scan">Tagged</span>
+        {% for x in fingerprints.manual %}
+        <span class="chip tech manual-tag">{{ x }}
+          <form method="post" action="{{ url_for('workspaces.remove_manual_fingerprint', workspace_id=ws.id, target_id=t.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="label" value="{{ x }}">
+            <button type="submit" title="Remove this tag">×</button>
+          </form>
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if ips %}<div class="fp-row"><span class="fp-key">IP / DNS</span>
+        {% for ip in ips %}<span class="chip mono">{{ ip }}</span>{% endfor %}</div>{% endif %}
+      {% if t.asn %}<div class="fp-row"><span class="fp-key">ASN</span>
+        <a class="chip mono" href="https://bgp.he.net/AS{{ t.asn }}" target="_blank" rel="noopener">AS{{ t.asn }}</a>
+        <span class="chip sensitive">{{ t.asn_name }}</span>
+        {% if t.country %}<span class="chip">{{ t.country }}</span>{% endif %}</div>{% endif %}
       {% if fingerprints.waf %}<div class="fp-row"><span class="fp-key">WAF</span>
         {% for x in fingerprints.waf %}<span class="chip waf">🛡 {{ x }}</span>{% endfor %}</div>{% endif %}
       {% if fingerprints.tech %}<div class="fp-row"><span class="fp-key">Tech</span>
@@ -141,136 +121,252 @@
         {% for x in fingerprints.servers %}<span class="chip">{{ x }}</span>{% endfor %}</div>{% endif %}
       {% if fingerprints.powered %}<div class="fp-row"><span class="fp-key">Powered-By</span>
         {% for x in fingerprints.powered %}<span class="chip">{{ x }}</span>{% endfor %}</div>{% endif %}
-    {% else %}
-      <p class="muted">No fingerprints yet. Run the <strong>alive</strong> module to populate this.</p>
+      {% if not (fingerprints.tech or fingerprints.servers or fingerprints.powered or fingerprints.waf) %}
+        <p class="muted">Nothing detected yet. Run the <strong>alive</strong> module, or tag it by hand below.</p>
+      {% endif %}
+
+      <form method="post" class="note-form" style="margin-top:12px"
+            action="{{ url_for('workspaces.add_manual_fingerprint', workspace_id=ws.id, target_id=t.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input name="labels" placeholder="Tag this host, e.g. Salesforce" required style="flex:1; min-width:170px">
+        <button class="btn primary" type="submit">Tag host</button>
+      </form>
+      <p class="muted" style="font-size:12px; margin:-6px 0 0">
+        Applies to <strong class="sensitive">{{ t.host }}</strong> only, right now — no scan needed,
+        and an alive re-run won't wipe it. Comma-separate for several.
+      </p>
+
+      <details style="margin-top:12px">
+        <summary class="muted" style="cursor:pointer; font-size:12px">…or teach Thoth to detect it everywhere →</summary>
+        <p class="muted" style="font-size:12px; margin:8px 0 6px">
+          A <strong>global signature</strong> instead: any host whose response matches gets the
+          label automatically. Case-insensitive substring match; applies from the next alive check.
+        </p>
+        <form method="post" action="{{ url_for('signatures.add') }}" class="note-form" style="margin:0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">
+          <input name="label" placeholder="Label, e.g. Salesforce" required style="width:160px">
+          <select name="field" style="width:auto">
+            <option value="body">in the page body</option>
+            <option value="header">in any response header</option>
+            <option value="server">in the Server header</option>
+            <option value="powered_by">in X-Powered-By</option>
+            <option value="cookie">in a cookie name</option>
+          </select>
+          <input name="needle" list="fp-seen" placeholder="Match text" required style="width:180px">
+          <datalist id="fp-seen">
+            {% for s in fingerprints.servers %}<option value="{{ s }}">{% endfor %}
+            {% for p in fingerprints.powered %}<option value="{{ p }}">{% endfor %}
+          </datalist>
+          <button class="btn" type="submit">Add signature</button>
+          <a class="muted" style="font-size:12px" href="{{ url_for('signatures.index') }}">manage all →</a>
+        </form>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>Modules run here</h2>
+      {% if module_runs %}
+        <table class="data">
+          <thead><tr><th>Module</th><th>When</th><th>Findings</th></tr></thead>
+          <tbody>
+            {% for r in module_runs %}
+            <tr><td><a href="{{ url_for('workspaces.run_detail', workspace_id=ws.id, run_id=r.id) }}">{{ r.module }}</a></td>
+              <td class="muted">{{ r.at.strftime("%Y-%m-%d %H:%M") }}</td>
+              <td class="mono">{{ r.count }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">No modules have produced findings for this domain yet.</p>
+      {% endif %}
+
+      {% if shot %}
+      <h2 style="margin-top:16px">Screenshot
+        <span class="muted">— {{ shot.taken_at.strftime("%Y-%m-%d %H:%M") }}</span></h2>
+      {% if shot.name %}
+      <a href="{{ url_for('workspaces.screenshot_file', workspace_id=ws.id, name=shot.name) }}" target="_blank" rel="noopener">
+        <img class="shot-full" alt="Screenshot of {{ t.host }}"
+             src="{{ url_for('workspaces.screenshot_file', workspace_id=ws.id, name=shot.name) }}">
+      </a>
+      {% else %}
+      <p class="muted">Capture failed: <span class="mono">{{ shot.error }}</span></p>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<!-- PAGES -->
+<section class="tabpane" data-pane="pages">
+  <div class="card">
+    <div class="table-toolbar">
+      <h2>Pages <span class="muted">({{ total_findings }} findings in {{ page_groups|length }} response group{{ 's' if page_groups|length != 1 }})</span></h2>
+      <div class="domain-filters">
+        <input type="text" id="page-filter" class="filter" placeholder="Filter paths…">
+        <button class="btn small" type="button" id="pg-reset" title="Filter is remembered across refreshes — this clears it">Reset</button>
+      </div>
+    </div>
+    <p class="muted" style="font-size:12px">Grouped by status + size, biggest group first, so a fuzz that returned thousands of identical responses stays one row — expand to see its paths.</p>
+    <table class="data">
+      <thead><tr><th>Status</th><th>Size</th><th>Paths</th><th></th></tr></thead>
+      <tbody id="page-groups">
+        {% for g in page_groups %}
+        <tr class="group-row" data-paths="{{ g.paths | map(attribute='path') | join(' ') }}">
+          <td>{% if g.status %}<span class="badge s{{ g.status // 100 }}xx">{{ g.status }}</span>{% else %}<span class="badge dead">dead</span>{% endif %}</td>
+          <td class="mono">{{ g.length if g.length is not none else "" }}</td>
+          <td class="mono">{{ g.count }}</td>
+          <td>
+            <details>
+              <summary class="muted">show {{ g.count }} path{{ 's' if g.count != 1 }}</summary>
+              <ul class="path-list">
+                {% for p in g.paths %}
+                <li class="sensitive mono"><a href="{{ t.base_url }}{{ p.path }}" target="_blank" rel="noopener">{{ p.path }}</a>
+                  <button class="btn small resp-btn" data-tid="{{ t.id }}" data-path="{{ p.path }}">Response</button>
+                  <button class="copy" data-copy="{{ t.base_url }}{{ p.path }}">⧉</button></li>
+                {% endfor %}
+                {% if g.truncated %}<li class="muted">…and {{ g.truncated }} more</li>{% endif %}
+              </ul>
+            </details>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No findings yet. Fuzz this host, or import results you already have.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- URLS -->
+<section class="tabpane" data-pane="urls">
+  <div class="card">
+    <div class="table-toolbar">
+      <h2>Interesting URLs
+        <span class="muted">— {{ url_summary.notable }} of {{ url_summary.scanned }} path(s), {{ url_summary.with_params }} taking parameters</span></h2>
+      <input type="text" id="url-filter" class="filter" placeholder="Filter…">
+    </div>
+    <p class="muted" style="font-size:12px">Anything that takes a <strong>parameter</strong> (a real input surface) or whose name hints at what it does. Ranked by how notable it is — parameters weigh heaviest.</p>
+
+    {% if url_summary.params %}
+    <div class="fp-row" style="margin-bottom:6px">
+      <span class="fp-key" title="Every distinct parameter name seen on this host — a ready-made param wordlist">Parameters</span>
+      {% for name, n in url_summary.params %}
+      <span class="chip mono sensitive">{{ name }}{% if n > 1 %} <span class="muted">×{{ n }}</span>{% endif %}</span>
+      {% endfor %}
+      <button class="copy" data-copy="{{ url_summary.params | map(attribute=0) | join('\n') }}" title="Copy all parameter names">⧉</button>
+    </div>
+    {% endif %}
+    {% if url_summary.labels %}
+    <div class="fp-row" style="margin-bottom:10px">
+      <span class="fp-key">Themes</span>
+      {% for label, n in url_summary.labels %}<span class="chip tech">{{ label }} <span class="muted">{{ n }}</span></span>{% endfor %}
+    </div>
     {% endif %}
 
-    <details style="margin-top:12px">
-      <summary class="muted" style="cursor:pointer; font-size:12px">Recognised something Thoth didn't? Add a fingerprint →</summary>
-      <p class="muted" style="font-size:12px; margin:8px 0 6px">
-        Teach Thoth to label this platform everywhere. Case-insensitive substring match;
-        applies from the next alive check. Pre-filled from what we saw on this host.
-      </p>
-      <form method="post" action="{{ url_for('signatures.add') }}" class="note-form" style="margin:0">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="next" value="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">
-        <input name="label" placeholder="Label, e.g. Salesforce" required style="width:170px">
-        <select name="field" style="width:auto">
-          <option value="body">in the page body</option>
-          <option value="header">in any response header</option>
-          <option value="server">in the Server header</option>
-          <option value="powered_by">in X-Powered-By</option>
-          <option value="cookie">in a cookie name</option>
-        </select>
-        <input name="needle" list="fp-seen" placeholder="Match text" required style="width:200px">
-        <datalist id="fp-seen">
-          {% for s in fingerprints.servers %}<option value="{{ s }}">{% endfor %}
-          {% for p in fingerprints.powered %}<option value="{{ p }}">{% endfor %}
-          {% if t.last_title %}<option value="{{ t.last_title }}">{% endif %}
-        </datalist>
-        <button class="btn" type="submit">Add fingerprint</button>
-        <a class="muted" style="font-size:12px" href="{{ url_for('signatures.index') }}">manage all →</a>
-      </form>
-    </details>
+    <table class="data">
+      <thead><tr><th>Path</th><th>Parameters</th><th>Why it stands out</th><th></th></tr></thead>
+      <tbody id="url-rows">
+        {% for r in url_rows %}
+        <tr data-url="{{ r.url }}">
+          <td class="mono sensitive" style="word-break:break-all">
+            <a href="{{ t.base_url }}{{ r.url if r.url.startswith('/') else '/' ~ r.url }}" target="_blank" rel="noopener">{{ r.path }}</a>
+          </td>
+          <td>{% for p in r.params %}<span class="chip mono sensitive">{{ p }}</span>{% endfor %}</td>
+          <td>
+            {% for flag in r.flags %}
+            <span class="chip waf" title="{{ {'redirect-param': 'A parameter that usually holds a URL — open redirect / SSRF candidate', 'id-param': 'A parameter that addresses a record — IDOR candidate', 'dynamic': 'Server-side script extension'}[flag] }}">{{ flag }}</span>
+            {% endfor %}
+            {% for label, why in r.keywords %}<span class="chip tech" title="{{ why }}">{{ label }}</span>{% endfor %}
+          </td>
+          <td class="row-actions">
+            <button class="btn small resp-btn" data-tid="{{ t.id }}" data-path="{{ r.url }}">Response</button>
+            <button class="copy" data-copy="{{ t.base_url }}{{ r.url if r.url.startswith('/') else '/' ~ r.url }}">⧉</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">Nothing stood out yet — no parameters or notable names among this host's paths.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if url_summary.truncated %}
+    <p class="muted" style="font-size:12px">…and {{ url_summary.truncated }} more below the cut.</p>
+    {% endif %}
   </div>
+</section>
 
-  <!-- Module runs / dirsearches -->
+<!-- FUZZ COVERAGE -->
+<section class="tabpane" data-pane="coverage">
   <div class="card">
-    <h2>Modules run here</h2>
-    {% if module_runs %}
+    <h2>Directory fuzz coverage <span class="muted">— what's already been fuzzed on this host</span></h2>
+    {% if coverage %}
+      <p class="muted" style="font-size:12px; margin-top:-4px">A normal <strong>Fuzz</strong> will <strong>skip</strong> these (dedup). Use <strong>Fuzz (force)</strong> or <strong>Clear ledger</strong> to re-test.</p>
       <table class="data">
-        <thead><tr><th>Module</th><th>When</th><th>Findings</th></tr></thead>
+        <thead><tr><th>Base path</th><th>Words tested</th><th>Last fuzzed</th></tr></thead>
         <tbody>
-          {% for r in module_runs %}
-          <tr><td>{{ r.module }}</td><td class="muted">{{ r.at.strftime("%Y-%m-%d %H:%M") }}</td><td class="mono">{{ r.count }}</td></tr>
+          {% for c in coverage %}
+          <tr>
+            <td class="mono sensitive">{{ c.parent }}</td>
+            <td class="mono">{{ "{:,}".format(c.words) }}</td>
+            <td class="muted">{{ c.last.strftime("%Y-%m-%d %H:%M") if c.last else "—" }}</td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>
     {% else %}
-      <p class="muted">No modules have produced findings for this domain yet.</p>
+      <p class="muted">Not fuzzed yet — no paths in the dedup ledger for this host. A fuzz will test the full wordlist.</p>
     {% endif %}
   </div>
-</div>
+</section>
 
-<!-- Pages breakdown -->
-<div class="card">
-  <div class="table-toolbar">
-    <h2>Pages <span class="muted">({{ total_findings }} findings, {{ page_groups|length }} response groups)</span></h2>
-    <input type="text" id="page-filter" class="filter" placeholder="Filter paths…">
+<!-- IMPORT -->
+<section class="tabpane" data-pane="import" id="import">
+  <div class="card">
+    <h2>Import dirsearch results <span class="muted">— paste output from the real dirsearch</span></h2>
+    <p class="muted" style="font-size:12px">
+      Already fuzzed this host outside Thoth? Paste the output (or upload a report) and it lands here as
+      findings <strong>and</strong> goes into the dedup ledger, so a later fuzz won't repeat that work.
+      Understands the terminal output and every <span class="mono">--format</span>:
+      <span class="mono">json</span>, <span class="mono">csv</span>, <span class="mono">md</span>,
+      <span class="mono">plain</span>, <span class="mono">simple</span>.
+    </p>
+    <form method="post" enctype="multipart/form-data"
+          action="{{ url_for('workspaces.import_dirsearch', workspace_id=ws.id, target_id=t.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="results" rows="10" class="mono" style="width:100%"
+                placeholder="[12:34:56] 200 -    1KB - /admin/&#10;[12:34:57] 301 -  169B  - /js  ->  {{ t.base_url }}/js/&#10;403 -  278B  - /.git/HEAD"></textarea>
+      <div class="note-form" style="margin-top:8px">
+        <!-- No accept filter: dirsearch reports are routinely saved without an extension. -->
+        <input type="file" name="file">
+        <button class="btn primary" type="submit">Import results</button>
+      </div>
+    </form>
   </div>
-  <p class="muted" style="font-size:12px">Responses are grouped by status + size so near-identical pages collapse into one row — expand to see paths.</p>
-  <table class="data">
-    <thead><tr><th>Status</th><th>Size</th><th>Paths</th><th></th></tr></thead>
-    <tbody id="page-groups">
-      {% for g in page_groups %}
-      <tr class="group-row" data-paths="{{ g.paths | map(attribute='path') | join(' ') }}">
-        <td>{% if g.status %}<span class="badge s{{ g.status // 100 }}xx">{{ g.status }}</span>{% else %}<span class="badge dead">dead</span>{% endif %}</td>
-        <td class="mono">{{ g.length if g.length is not none else "" }}</td>
-        <td class="mono">{{ g.count }}</td>
-        <td>
-          <details>
-            <summary class="muted">show</summary>
-            <ul class="path-list">
-              {% for p in g.paths %}
-              <li class="sensitive mono"><a href="{{ t.base_url }}{{ p.path }}" target="_blank" rel="noopener">{{ p.path }}</a>
-                <button class="btn small resp-btn" data-tid="{{ t.id }}" data-path="{{ p.path }}">Response</button>
-                <button class="copy" data-copy="{{ t.base_url }}{{ p.path }}">⧉</button></li>
-              {% endfor %}
-              {% if g.truncated %}<li class="muted">…and {{ g.truncated }} more</li>{% endif %}
-            </ul>
-          </details>
-        </td>
-      </tr>
+</section>
+
+<!-- NOTES -->
+<section class="tabpane" data-pane="notes" id="notes">
+  <div class="card">
+    <h2>Notes</h2>
+    <form method="post" action="{{ url_for('workspaces.add_note', workspace_id=ws.id, target_id=t.id) }}" class="note-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input name="path" placeholder="/optional/path" class="note-path mono">
+      <input name="body" placeholder="e.g. /bob/hi is interesting" required>
+      <button class="btn" type="submit">Add note</button>
+    </form>
+    <ul class="note-list">
+      {% for n in notes %}
+      <li>
+        {% if n.path %}<span class="chip mono sensitive">{{ n.path }}</span> {% endif %}
+        <span class="sensitive">{{ n.body }}</span>
+        <span class="muted" style="font-size:11px">· {{ n.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+      </li>
       {% else %}
-      <tr><td colspan="4" class="muted">No findings yet. Run a module from the workspace Overview.</td></tr>
+      <li class="muted">No notes yet.</li>
       {% endfor %}
-    </tbody>
-  </table>
-</div>
-
-<!-- Import real dirsearch output -->
-<div class="card" id="import">
-  <h2>Import dirsearch results <span class="muted">— paste output from the real dirsearch</span></h2>
-  <p class="muted" style="font-size:12px">
-    Already fuzzed this host outside Thoth? Paste the output (or upload a report) and it lands here as
-    findings <strong>and</strong> goes into the dedup ledger, so a later fuzz won't repeat that work.
-    Understands the terminal output and every <span class="mono">--format</span>:
-    <span class="mono">json</span>, <span class="mono">csv</span>, <span class="mono">md</span>,
-    <span class="mono">plain</span>, <span class="mono">simple</span>.
-  </p>
-  <form method="post" enctype="multipart/form-data"
-        action="{{ url_for('workspaces.import_dirsearch', workspace_id=ws.id, target_id=t.id) }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <textarea name="results" rows="8" class="mono" style="width:100%"
-              placeholder="[12:34:56] 200 -    1KB - /admin/&#10;[12:34:57] 301 -  169B  - /js  ->  {{ t.base_url }}/js/&#10;403 -  278B  - /.git/HEAD"></textarea>
-    <div class="note-form" style="margin-top:8px">
-      <input type="file" name="file" accept=".txt,.json,.csv,.md,.log">
-      <button class="btn primary" type="submit">Import results</button>
-    </div>
-  </form>
-</div>
-
-<!-- Notes -->
-<div class="card" id="notes">
-  <h2>Notes</h2>
-  <form method="post" action="{{ url_for('workspaces.add_note', workspace_id=ws.id, target_id=t.id) }}" class="note-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input name="path" placeholder="/optional/path" class="note-path mono">
-    <input name="body" placeholder="e.g. /bob/hi is interesting" required>
-    <button class="btn" type="submit">Add note</button>
-  </form>
-  <ul class="note-list">
-    {% for n in notes %}
-    <li>
-      {% if n.path %}<span class="chip mono sensitive">{{ n.path }}</span> {% endif %}
-      <span class="sensitive">{{ n.body }}</span>
-      <span class="muted" style="font-size:11px">· {{ n.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
-    </li>
-    {% else %}
-    <li class="muted">No notes yet.</li>
-    {% endfor %}
-  </ul>
-</div>
+    </ul>
+  </div>
+</section>
 
 <script>window.THOTH = { baseUrl: "{{ url_for('workspaces.detail', workspace_id=ws.id) }}" };</script>
 {% endblock %}
@@ -290,6 +386,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/persist.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tabs.js') }}"></script>
 <script src="{{ url_for('static', filename='js/domain-page.js') }}"></script>
 <script src="{{ url_for('static', filename='js/response.js') }}"></script>
 <script src="{{ url_for('static', filename='js/activity.js') }}"></script>

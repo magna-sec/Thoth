@@ -1,4 +1,4 @@
-/* Six themes via CSS custom properties, switched by [data-theme] on <html>. */
+/* Seven themes via CSS custom properties, switched by [data-theme] on <html>. */
 :root {
   --bg: #0f1216; --panel: #171b21; --panel-2: #1e242c; --border: #2a323d;
   --text: #e6edf3; --muted: #8b98a5; --accent: #4a9eff; --accent-2: #2d7fd6;
@@ -29,6 +29,24 @@
   --ok: #008000; --warn: #808000; --err: #800000; --redir: #000080;
   --mono: "Courier New", monospace;
 }
+/* Thoth's own: a tomb-wall palette. Ground is the dark of a burial chamber, panels the
+   sandstone above it; gold leads, lapis lazuli answers, malachite/carnelian carry the
+   status colours. Named pigments the Egyptians actually ground and used. */
+:root[data-theme="egyptian"] {
+  --bg: #17120c;        /* chamber dark */
+  --panel: #241c12;     /* sandstone in shadow */
+  --panel-2: #302517;   /* lit sandstone */
+  --border: #5c4523;    /* incised outline */
+  --text: #f3e3c3;      /* limestone plaster */
+  --muted: #a8916a;     /* faded ochre */
+  --accent: #e8b23c;    /* gold */
+  --accent-2: #2f6fa8;  /* lapis lazuli */
+  --ok: #4f9d6e;        /* malachite */
+  --warn: #d98a2b;      /* yellow ochre */
+  --err: #cc5a38;       /* carnelian, lifted for badge legibility on the dark ground */
+  --redir: #7c9fc9;     /* faience blue */
+}
+
 :root[data-theme="contrast"] {
   --bg: #000000; --panel: #0a0a0a; --panel-2: #141414; --border: #ff00ff;
   --text: #ffffff; --muted: #00ffff; --accent: #ff00ff; --accent-2: #00ffff;

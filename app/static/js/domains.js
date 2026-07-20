@@ -4,6 +4,9 @@
   const csrf = meta ? meta.content : '';
 
   function colour(card, code, alive, checkedAt, waf, ports) {
+    // ports arrives as the full open list so the port filter stays accurate after a
+    // re-check, not just the alt ports.
+    card.dataset.ports = (ports || []).join(',');
     const live = alive ? 'up' : 'down';
     card.classList.remove('status-up', 'status-down', 'status-na');
     card.classList.add('status-' + live);
@@ -18,8 +21,9 @@
     if (chk && checkedAt) chk.textContent = 'checked ' + checkedAt;
     const wafBox = card.querySelector('.dc-waf');
     if (wafBox) {
+      const portList = (ports || []).join(', ');
       wafBox.innerHTML = (waf ? `<span class="chip waf">🛡 ${esc(waf)}</span>` : '')
-        + (ports ? `<span class="chip port" title="Alt-HTTP port(s) answering on this host">⚡ ${esc(ports)}</span>` : '');
+        + (portList ? `<span class="chip port dc-ports" title="Port(s) answering HTTP on this host">⚡ ${esc(portList)}</span>` : '');
     }
     applyFilters();
   }
@@ -56,25 +60,33 @@
   const search = document.getElementById('domain-search');
   const fLive = document.getElementById('filter-live');
   const fStatus = document.getElementById('filter-status');
+  const fPort = document.getElementById('filter-port');
   const count = document.getElementById('domain-count');
+
+  const portsOf = (card) => (card.dataset.ports || '').split(',').filter(Boolean);
 
   function applyFilters() {
     const q = (search && search.value || '').toLowerCase();
     const live = fLive && fLive.value;
     const status = fStatus && fStatus.value;
+    const port = fPort && fPort.value;
     let shown = 0;
     document.querySelectorAll('.domain-card').forEach(card => {
       const okHost = !q || (card.dataset.host || '').toLowerCase().includes(q);
       const okLive = !live || card.dataset.live === live;
       const okStatus = !status || (card.dataset.code || '').charAt(0) === status;
-      const show = okHost && okLive && okStatus;
+      const ports = portsOf(card);
+      const okPort = !port || (port === 'alt'
+        ? ports.some(p => p !== '80' && p !== '443')
+        : ports.includes(port));
+      const show = okHost && okLive && okStatus && okPort;
       card.style.display = show ? '' : 'none';
       if (show) shown++;
     });
     if (count) count.textContent = shown;
   }
   window.applyFilters = applyFilters;
-  const controls = [search, fLive, fStatus];
+  const controls = [search, fLive, fStatus, fPort];
   controls.forEach(el => {
     if (el) el.addEventListener('input', applyFilters);
     if (el) el.addEventListener('change', applyFilters);

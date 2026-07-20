@@ -1,31 +1,6 @@
-// Tabs, sortable/filterable tables, copy buttons, per-module config toggle, analysis bars.
+// Sortable/filterable tables, copy buttons, per-module config toggle, analysis bars.
+// (Tabs live in tabs.js — the subdomain page needs those without the rest of this.)
 (function () {
-  // --- Tabs ---
-  const tabWrap = document.querySelector('[data-tabs]');
-  if (tabWrap) {
-    tabWrap.addEventListener('click', (e) => {
-      const btn = e.target.closest('.tab');
-      if (!btn) return;
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tabpane').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelector(`[data-pane="${btn.dataset.tab}"]`).classList.add('active');
-    });
-  }
-  if (location.hash) {
-    const b = document.querySelector(`.tab[data-tab="${location.hash.slice(1)}"]`);
-    if (b) b.click();
-  }
-  // Buttons that jump to another tab (e.g. Overview quick actions).
-  document.querySelectorAll('.tab-jump').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const t = document.querySelector(`.tab[data-tab="${btn.dataset.goto}"]`);
-      if (t) t.click();
-    });
-  });
-  // Come back to the tab you were on after a refresh (a #hash still wins).
-  if (tabWrap && window.Thoth) window.Thoth.persistTab();
-
   // --- Module config toggle ---
   const modSel = document.getElementById('module-select');
   function syncMod() {

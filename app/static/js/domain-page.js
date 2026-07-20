@@ -24,7 +24,21 @@
       });
     };
     pf.addEventListener('input', applyPathFilter);
-    window.Thoth.persist('page-filter', [pf], applyPathFilter);
+    window.Thoth.persist('page-filter', [pf], applyPathFilter,
+                         document.getElementById('pg-reset'));
+  }
+
+  // Filter the interesting-URLs table (path, params and labels all searchable)
+  const uf = document.getElementById('url-filter');
+  if (uf) {
+    const applyUrlFilter = () => {
+      const q = uf.value.trim().toLowerCase();
+      document.querySelectorAll('#url-rows tr[data-url]').forEach(tr => {
+        tr.style.display = !q || tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    };
+    uf.addEventListener('input', applyUrlFilter);
+    window.Thoth.persist('url-filter', [uf], applyUrlFilter);
   }
 
   // Standalone "Check live" on the header

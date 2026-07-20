@@ -100,6 +100,7 @@ def _lightweight_migrate():
             "last_title": "VARCHAR(300)",
             "last_tech": "VARCHAR(300)",
             "open_ports": "VARCHAR(120)",
+            "manual_tech": "VARCHAR(300)",
             "ip": "VARCHAR(64)",
             "asn": "VARCHAR(16)",
             "asn_name": "VARCHAR(200)",

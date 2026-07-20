@@ -214,7 +214,8 @@
           enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <textarea name="targets" rows="4" placeholder="app.example.com&#10;https://api.example.com&#10;mail.example.com:8443"></textarea>
-      <label>…or upload a list <input type="file" name="file" accept=".txt,.csv,.list,.lst"></label>
+      <!-- No accept filter: subdomain lists are often extensionless. -->
+      <label>…or upload a list <input type="file" name="file"></label>
       <p class="muted" style="font-size:12px">Subdomains are lowercased, de-duplicated against the existing set, and sorted on import.</p>
       <button class="btn" type="submit">Import</button>
     </form>
@@ -233,6 +234,14 @@
         <option value="2">2xx</option><option value="3">3xx</option>
         <option value="4">4xx</option><option value="5">5xx</option>
       </select>
+      <select id="filter-port" title="Show only hosts answering on a given port">
+        <option value="">Any port</option>
+        <option value="80">80 open</option>
+        <option value="443">443 open</option>
+        <option value="8080">8080 open</option>
+        <option value="8443">8443 open</option>
+        <option value="alt">Any alt port (not 80/443)</option>
+      </select>
       <button class="btn small" type="button" id="df-reset" title="Filters are remembered across refreshes — this clears them">Reset filters</button>
       <form method="post" action="{{ url_for('workspaces.check_all', workspace_id=ws.id) }}" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -245,7 +254,8 @@
     <div class="domain-card status-{{ 'na' if t.last_alive is none else ('up' if t.last_alive else 'down') }}"
          data-tid="{{ t.id }}" data-host="{{ t.host }}"
          data-live="{{ 'na' if t.last_alive is none else ('up' if t.last_alive else 'down') }}"
-         data-code="{{ t.last_status_code if t.last_status_code is not none else '' }}">
+         data-code="{{ t.last_status_code if t.last_status_code is not none else '' }}"
+         data-ports="{{ t.open_port_list | join(',') }}">
       <div class="dc-head">
         <a class="dc-host sensitive mono" href="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">{{ t.host }}</a>
         {% if t.last_alive is none %}
@@ -261,7 +271,7 @@
         <span class="dc-checked">{% if t.last_checked_at %}checked {{ t.last_checked_at.strftime("%H:%M:%S") }}{% else %}not checked{% endif %}</span>
       </div>
       <div class="dc-waf">{% if t.last_waf %}<span class="chip waf">🛡 {{ t.last_waf }}</span>{% endif %}
-        {% if t.open_ports %}<span class="chip port" title="Alt-HTTP port(s) answering on this host">⚡ {{ t.open_ports }}</span>{% endif %}</div>
+        {% if t.open_port_list %}<span class="chip port dc-ports" title="Port(s) answering HTTP on this host">⚡ {{ t.open_port_list | join(', ') }}</span>{% endif %}</div>
       <div class="dc-server muted">{% if t.last_server %}<span class="dc-srv">{{ t.last_server }}</span>{% endif %}</div>
       <div class="dc-title sensitive">{% if t.last_title %}{{ t.last_title }}{% endif %}</div>
       <div class="dc-modules">
@@ -508,6 +518,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/persist.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tabs.js') }}"></script>
 <script src="{{ url_for('static', filename='js/table.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stream.js') }}"></script>
 <script src="{{ url_for('static', filename='js/domains.js') }}"></script>

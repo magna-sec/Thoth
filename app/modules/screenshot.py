@@ -38,8 +38,13 @@ class CaptureError(RuntimeError):
 
 
 def screenshot_dir(workspace_id, create=False):
-    """Where a workspace's PNGs live. Inside DATA_DIR/workspaces/<id> so wipe cleans up."""
-    d = Path(current_app.config["DATA_DIR"]) / "workspaces" / str(workspace_id) / "screenshots"
+    """Where a workspace's PNGs live. Inside DATA_DIR/workspaces/<id> so wipe cleans up.
+
+    Always absolute: Flask's send_from_directory resolves a relative directory against the
+    app package dir, which would serve 404s for files that are really on disk.
+    """
+    d = (Path(current_app.config["DATA_DIR"]).resolve()
+         / "workspaces" / str(workspace_id) / "screenshots")
     if create:
         d.mkdir(parents=True, exist_ok=True)
     return d
