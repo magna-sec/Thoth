@@ -28,6 +28,17 @@ def to_proxies(url):
     return {"http": url, "https": url} if url else None
 
 
+class TaskCancelled(Exception):
+    """Raised inside a module when the operator has asked the run to stop.
+
+    Not an error: the task runner turns it into the 'cancelled' status, and whatever the
+    module already committed (findings, ledger entries) stays.
+    """
+
+
+CANCEL_POLL_SECONDS = 1.0
+
+
 class RunContext:
     """Handed to every module.run(). Persists findings and pushes live events."""
 
@@ -39,10 +50,57 @@ class RunContext:
         self.proxies = to_proxies(self.proxy)
         # Plain data, safe to consult from worker threads.
         self.scope = for_workspace(run.workspace) if run.workspace else for_workspace(None)
+        self._cancelled = False
+        self._cancel_checked_at = 0.0
 
     def in_scope(self, host):
         """Modules that discover new hosts must check them before requesting anything."""
         return self.scope.allows(host)
+
+    @property
+    def cancelled(self):
+        """Has a stop been requested? Polled at most once a second.
+
+        Read over its own short-lived connection rather than the ORM session: the flag is
+        written by the *web* process, and this process holds a long read transaction whose
+        SQLite snapshot would never show it (the same trap the SSE fallback documents).
+        """
+        import time
+        from sqlalchemy import text
+        if self._cancelled:
+            return True
+        now = time.monotonic()
+        if now - self._cancel_checked_at < CANCEL_POLL_SECONDS:
+            return False
+        self._cancel_checked_at = now
+        try:
+            with db.engine.connect() as conn:
+                flag = conn.execute(
+                    text("SELECT cancel_requested FROM runs WHERE id = :id"),
+                    {"id": self.run.id}).scalar()
+        except Exception:  # noqa: BLE001 - a failed poll must never abort a healthy run
+            return False
+        self._cancelled = bool(flag)
+        return self._cancelled
+
+    def raise_if_cancelled(self):
+        if self.cancelled:
+            raise TaskCancelled()
+
+    def each_completed(self, executor, futures):
+        """as_completed(), but it stops promptly when the run is cancelled.
+
+        Pending work is dropped rather than waited on, so stopping is quick even with a
+        long queue; already-running requests finish (bounded by their own timeout).
+        """
+        from concurrent.futures import as_completed
+        try:
+            for fut in as_completed(futures):
+                self.raise_if_cancelled()
+                yield fut
+        except TaskCancelled:
+            executor.shutdown(cancel_futures=True)
+            raise
 
     def set_progress(self, done, total):
         """Persist task progress (done/total requests) for the UI progress bar."""

@@ -147,7 +147,12 @@ class Run(db.Model):
                              nullable=False, index=True)
     module = db.Column(db.String(60), nullable=False)
     config_json = db.Column(db.JSON, default=dict)
-    status = db.Column(db.String(20), default="queued")  # queued|running|done|error
+    status = db.Column(db.String(20), default="queued")  # queued|running|done|error|cancelled
+    # Cooperative stop: the web process raises the flag, the task process notices it in
+    # its next loop iteration and unwinds cleanly, keeping partial results and the dedup
+    # ledger intact. `pid` is only the backstop for a wedged process.
+    cancel_requested = db.Column(db.Boolean, default=False)
+    pid = db.Column(db.Integer)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     started_at = db.Column(db.DateTime)

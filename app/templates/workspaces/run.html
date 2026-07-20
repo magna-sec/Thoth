@@ -7,8 +7,24 @@
 <div class="page-head">
   <h1>Task #{{ run.id }} — {{ run.module }}</h1>
   <span class="badge run-{{ run.status }}" id="run-badge">{{ run.status }}</span>
-  {% if run.status in ("queued", "running") %}<span class="spinner"></span>{% endif %}
-  {% if run.status in ("done", "error") and rerunnable %}
+  {% if run.status in ("queued", "running") %}<span class="spinner"></span>
+  {% if run.cancel_requested %}<span class="muted" id="stopping-note">stopping…</span>{% endif %}
+  <form method="post" action="{{ url_for('workspaces.stop_run', workspace_id=ws.id, run_id=run.id) }}"
+        style="margin:0 0 0 auto">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn small danger-btn" type="submit"
+            title="Stops after the requests already in flight; findings and dedup entries so far are kept">Stop ■</button>
+  </form>
+  {% if run.cancel_requested and run.pid %}
+  <form method="post" action="{{ url_for('workspaces.stop_run', workspace_id=ws.id, run_id=run.id) }}"
+        style="margin:0" onsubmit="return confirm('Force-kill task #{{ run.id }}? Work in flight will not be recorded.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="force" value="1">
+    <button class="btn small" type="submit" title="Only if it appears wedged — kills the process outright">Force kill</button>
+  </form>
+  {% endif %}
+  {% endif %}
+  {% if run.status in ("done", "error", "cancelled") and rerunnable %}
   <form method="post" action="{{ url_for('workspaces.rerun', workspace_id=ws.id, run_id=run.id) }}" style="margin:0 0 0 auto">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn small" type="submit" title="{{ 'Re-run ignoring the dedup ledger' if run.module == 'dirsearch' else 'Run this task again' }}">Re-run{{ " (force)" if run.module == "dirsearch" }} ↻</button>

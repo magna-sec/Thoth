@@ -245,7 +245,7 @@ class DnsBruteModule(Module):
         with ThreadPoolExecutor(max_workers=min(threads, len(ordered))) as ex:
             futs = {ex.submit(resolve, f"{label}.{domain}", resolver, timeout): label
                     for label in ordered}
-            for fut in as_completed(futs):
+            for fut in ctx.each_completed(ex, futs):
                 label = futs[fut]
                 results.append((label, fut.result()))
                 done += 1

@@ -87,6 +87,7 @@ class DirsearchModule(Module):
         def scan(parent_path, depth):
             if parent_path in scanned_parents or depth < 0:
                 return
+            ctx.raise_if_cancelled()  # also stops before descending into a new directory
             scanned_parents.add(parent_path)
             if verbose and parent_path != "/":
                 ctx.log(f"Added to the queue: {parent_path}")
@@ -119,7 +120,7 @@ class DirsearchModule(Module):
             with ThreadPoolExecutor(max_workers=threads) as ex:
                 futs = {ex.submit(_probe, session, base_url, parent_path, c, timeout, verify): c
                         for c in todo}
-                for fut in as_completed(futs):
+                for fut in ctx.each_completed(ex, futs):
                     results.append(fut.result())
                     _bump_done()
             stats["tested"] += len(results)

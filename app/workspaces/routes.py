@@ -237,6 +237,72 @@ def export(workspace_id):
     })
 
 
+ACTIVE_STATUSES = ("queued", "running")
+
+
+@ws_bp.route("/<int:workspace_id>/runs/<int:run_id>/stop", methods=["POST"])
+@login_required
+def stop_run(workspace_id, run_id):
+    """Ask a task to stop.
+
+    Cooperative by default: the flag is raised here and the task process notices it within
+    a second and unwinds cleanly, keeping its findings and dedup-ledger entries. `force`
+    escalates to killing the process, which is only for a wedged run — it can leave the
+    last batch of work unrecorded.
+    """
+    ws = _get_member_workspace(workspace_id)
+    run = db.session.get(Run, run_id)
+    if run is None or run.workspace_id != ws.id:
+        abort(404)
+    back = url_for("workspaces.run_detail", workspace_id=ws.id, run_id=run.id)
+
+    if run.status not in ACTIVE_STATUSES:
+        flash(f"Task #{run.id} already finished ({run.status}).", "error")
+        return redirect(request.form.get("next") or back)
+
+    run.cancel_requested = True
+    if run.status == "queued":
+        # It hasn't started, so there's no worker to notice — finish it here.
+        run.status = "cancelled"
+        run.finished_at = datetime.utcnow()
+        db.session.commit()
+        publish(ws.id, {"type": "run_status", "run_id": run.id, "status": "cancelled"})
+        flash(f"Task #{run.id} cancelled before it started.", "info")
+        return redirect(request.form.get("next") or back)
+
+    db.session.commit()
+
+    if request.form.get("force") and run.pid:
+        killed, why = _kill(run.pid)
+        if killed:
+            run.status = "cancelled"
+            run.finished_at = datetime.utcnow()
+            run.log = (run.log or "") + \
+                f"{datetime.utcnow():%H:%M:%S} Force-killed by operator.\n"
+            db.session.commit()
+            publish(ws.id, {"type": "run_status", "run_id": run.id, "status": "cancelled"})
+            flash(f"Task #{run.id} force-killed. Work in flight was not recorded.", "info")
+        else:
+            flash(f"Couldn't kill task #{run.id}: {why}", "error")
+    else:
+        flash(f"Stop requested for task #{run.id} — it will finish its current requests "
+              f"and stop shortly.", "info")
+    return redirect(request.form.get("next") or back)
+
+
+def _kill(pid):
+    """Terminate a task process. Returns (killed, reason)."""
+    import os
+    import signal
+    try:
+        os.kill(pid, getattr(signal, "SIGTERM", 15))
+        return True, None
+    except ProcessLookupError:
+        return True, None  # already gone, which is the outcome we wanted
+    except OSError as e:
+        return False, str(e)
+
+
 @ws_bp.route("/<int:workspace_id>/runs/<int:run_id>/rerun", methods=["POST"])
 @login_required
 def rerun(workspace_id, run_id):
@@ -291,6 +357,7 @@ def run_status(workspace_id, run_id):
         abort(404)
     return jsonify({
         "status": run.status,
+        "cancel_requested": bool(run.cancel_requested),
         "log": run.log or "",
         "findings": Finding.query.filter_by(run_id=run.id).count(),
         "progress_done": run.progress_done or 0,

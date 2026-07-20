@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .extensions import celery, db
 from .modules import get_module
-from .modules.base import RunContext
+from .modules.base import RunContext, TaskCancelled
 from .models import Run, Target
 from .realtime import publish
 
@@ -22,8 +22,14 @@ def dispatch(run_id):
     shares the DB (SQLite WAL) so findings/progress stream back live.
     """
     if celery.conf.task_always_eager:
-        subprocess.Popen([sys.executable, "-m", "app.runtask", str(run_id)],
-                         cwd=str(_PROJECT_ROOT))
+        proc = subprocess.Popen([sys.executable, "-m", "app.runtask", str(run_id)],
+                                cwd=str(_PROJECT_ROOT))
+        # Recorded only so a wedged run can be force-killed; stopping is normally
+        # cooperative and doesn't need it.
+        run = db.session.get(Run, run_id)
+        if run is not None:
+            run.pid = proc.pid
+            db.session.commit()
     else:
         run_module_task.delay(run_id)
 
@@ -38,6 +44,14 @@ def run_module_task(run_id):
         run.status = "error"
         run.error = f"Unknown module: {run.module}"
         db.session.commit()
+        return
+
+    if run.cancel_requested:  # stopped while still queued — never start the work
+        run.status = "cancelled"
+        run.finished_at = datetime.utcnow()
+        db.session.commit()
+        publish(run.workspace_id, {"type": "run_status", "run_id": run.id,
+                                   "status": "cancelled"})
         return
 
     run.status = "running"
@@ -82,6 +96,15 @@ def run_module_task(run_id):
         run.status = "done"
         db.session.commit()
         status = "done"
+    except TaskCancelled:
+        # Not a failure: the operator asked to stop. Whatever was already committed
+        # stands, including the dedup ledger, so a re-run picks up where this left off.
+        db.session.rollback()
+        run = db.session.get(Run, run_id)
+        run.status = status = "cancelled"
+        run.finished_at = datetime.utcnow()
+        run.log = (run.log or "") + f"{datetime.utcnow():%H:%M:%S} Stopped by operator.\n"
+        db.session.commit()
     except Exception as e:  # noqa: BLE001 - surface any module failure to the UI
         # Roll back the poisoned transaction, then record the failure on a clean session.
         db.session.rollback()

@@ -363,7 +363,7 @@ class AliveModule(Module):
         with ThreadPoolExecutor(max_workers=min(threads, max(1, total))) as ex:
             futs = {ex.submit(work, host, own_port, own_scheme): tid
                     for tid, host, own_port, own_scheme in jobs}
-            for fut in as_completed(futs):
+            for fut in ctx.each_completed(ex, futs):
                 results[futs[fut]] = fut.result()
                 done += 1
                 if done % 5 == 0:

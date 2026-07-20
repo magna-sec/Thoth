@@ -3,7 +3,8 @@
 (function () {
   const T = window.THOTH;
   if (!T || !T.runId) return;
-  if (T.runStatus === 'done' || T.runStatus === 'error') return;  // static snapshot
+  const FINISHED = ['done', 'error', 'cancelled'];
+  if (FINISHED.includes(T.runStatus)) return;  // static snapshot
 
   const logEl = document.getElementById('run-log');
   const countEl = document.getElementById('run-count');
@@ -22,7 +23,11 @@
     if (fill) fill.style.width = d.progress_pct + '%';
     if (ptext) ptext.textContent = `${d.progress_done}/${d.progress_total} (${d.progress_pct}%)`;
 
-    if (d.status === 'done' || d.status === 'error') {
+    // A stop is cooperative, so surface that it was asked for while we wait for it.
+    const note = document.getElementById('stopping-note');
+    if (d.cancel_requested && !note) location.reload();
+
+    if (FINISHED.includes(d.status)) {
       location.reload();  // render config + results table in final state
       return;
     }

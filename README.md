@@ -33,8 +33,10 @@ re-fuzzed twice — no duplicated work between runs or teammates.
 - **Results** — rich filters (status, exclude-status/size, WAF, hide dead/3xx) that **stick
   across refreshes**, clickable paths, and a full **response viewer** (through your proxy).
 - **Analysis** — ASN ownership, WAF vendors, tech, servers, and countries across the estate.
-- **Tasks** with live progress + persisted CLI-style output; live updates via SSE; Burp
-  proxy support; per-subdomain notes; 6 UI themes.
+- **Tasks** with live progress + persisted CLI-style output, and a **Stop** button — the
+  task finishes its in-flight requests and unwinds, keeping the findings and dedup entries
+  it already recorded, so a re-run carries on rather than starting over. Live updates via
+  SSE; Burp proxy support; per-subdomain notes; 7 UI themes.
 
 ## Quick start (no Docker)
 

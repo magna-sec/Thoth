@@ -78,6 +78,7 @@ table.sortable th[data-sort] { cursor: pointer; }
 .badge.run-done { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
 .badge.run-running { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
 .badge.run-queued { background: var(--panel-2); color: var(--muted); }
+.badge.run-cancelled { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
 
 /* Live / bars */
 .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 1.4s infinite; }

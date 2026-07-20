@@ -88,6 +88,8 @@ def _lightweight_migrate():
         },
         "runs": {
             "log": "TEXT",
+            "cancel_requested": "BOOLEAN",
+            "pid": "INTEGER",
             "progress_done": "INTEGER",
             "progress_total": "INTEGER",
         },

@@ -544,7 +544,16 @@
           <td class="mono">{{ run_counts.get(r.id, 0) }}</td>
           <td class="muted">{{ r.started_at.strftime("%m-%d %H:%M:%S") if r.started_at else "—" }}</td>
           <td class="muted">{{ r.finished_at.strftime("%m-%d %H:%M:%S") if r.finished_at else "—" }}</td>
-          <td><a class="btn small" href="{{ url_for('workspaces.run_detail', workspace_id=ws.id, run_id=r.id) }}">View output</a></td>
+          <td class="row-actions">
+            <a class="btn small" href="{{ url_for('workspaces.run_detail', workspace_id=ws.id, run_id=r.id) }}">View output</a>
+            {% if r.status in ("queued", "running") %}
+            <form method="post" action="{{ url_for('workspaces.stop_run', workspace_id=ws.id, run_id=r.id) }}" style="margin:0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#runs">
+              <button class="btn small danger-btn" type="submit" title="Stop this task">Stop ■</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% else %}
         <tr><td colspan="9" class="muted">No tasks yet.</td></tr>

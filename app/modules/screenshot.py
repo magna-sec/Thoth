@@ -260,7 +260,7 @@ class ScreenshotModule(Module):
                 with ThreadPoolExecutor(max_workers=min(threads, len(jobs))) as ex:
                     futs = {ex.submit(work, url, path): (tid, path)
                             for tid, url, path in jobs}
-                    for fut in as_completed(futs):
+                    for fut in ctx.each_completed(ex, futs):
                         tid, path = futs[fut]
                         self._record(ctx, by_id[tid], path, *fut.result(), width=width,
                                      height=height, full_page=full_page,
@@ -269,6 +269,7 @@ class ScreenshotModule(Module):
                         ctx.set_progress(done, len(jobs))
             else:
                 for tid, url, path in jobs:
+                    ctx.raise_if_cancelled()  # sequential (Playwright) backend
                     self._record(ctx, by_id[tid], path, *work(url, path), width=width,
                                  height=height, full_page=full_page, backend=backend.name)
                     done += 1
