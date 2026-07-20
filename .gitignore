@@ -29,6 +29,10 @@ data/
 .coverage
 htmlcov/
 
+# Claude Code — tool approvals, which are machine-local (absolute paths, temp dirs).
+# To share a project settings file deliberately: git add -f .claude/settings.json
+.claude/
+
 # Editors / OS
 .vscode/
 .idea/

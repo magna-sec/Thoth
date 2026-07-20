@@ -23,6 +23,8 @@
       if (t) t.click();
     });
   });
+  // Come back to the tab you were on after a refresh (a #hash still wins).
+  if (tabWrap && window.Thoth) window.Thoth.persistTab();
 
   // --- Module config toggle ---
   const modSel = document.getElementById('module-select');

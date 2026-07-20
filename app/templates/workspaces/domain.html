@@ -38,6 +38,15 @@
     <input type="hidden" name="cfg_force" value="on">
     <button class="btn small" type="submit" title="Re-test every path, ignoring the dedup ledger">Fuzz (force) ▶</button>
   </form>
+  <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+    <input type="hidden" name="target_id" value="{{ t.id }}">
+    <input type="hidden" name="module" value="screenshot">
+    <input type="hidden" name="cfg__bools" value="force">
+    <input type="hidden" name="cfg_force" value="on">
+    <button class="btn small" type="submit" title="Capture this site in a headless browser">Screenshot 📷</button>
+  </form>
   <form method="post" action="{{ url_for('workspaces.clear_ledger_domain', workspace_id=ws.id, target_id=t.id) }}" style="margin:0"
         onsubmit="return confirm('Clear the dedup ledger for {{ t.host }}? Future fuzzes will re-test everything.')">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -54,7 +63,41 @@
   <div class="stat"><div class="stat-num">{{ last_live.strftime("%m-%d %H:%M") if last_live else "—" }}</div><div class="stat-label">Last seen live</div></div>
   <div class="stat"><div class="stat-num">{{ t.last_checked_at.strftime("%m-%d %H:%M") if t.last_checked_at else "—" }}</div><div class="stat-label">Last checked</div></div>
   <div class="stat"><div class="stat-num">{{ total_findings }}</div><div class="stat-label">Findings</div></div>
+  <div class="stat">
+    <div class="stat-num" style="font-size:18px">{{ open_ports|join(", ") if open_ports else "—" }}</div>
+    <div class="stat-label">Open alt ports</div>
+  </div>
 </div>
+
+{% if open_ports %}
+<div class="card">
+  <h2>Open alt-HTTP ports <span class="muted">— found by the alive check</span></h2>
+  <div class="fp-row">
+    {% for p in open_ports %}
+    <a class="chip port mono" target="_blank" rel="noopener"
+       href="{{ ('https' if p.endswith('443') else 'http') }}://{{ t.host }}:{{ p }}">⚡ {{ t.host }}:{{ p }}</a>
+    {% endfor %}
+  </div>
+  <p class="muted" style="font-size:12px">These answered HTTP on a non-primary port — admin panels and dev copies live here. Add one as its own subdomain entry to fuzz it.</p>
+</div>
+{% endif %}
+
+{% if shot %}
+<div class="card">
+  <div class="table-toolbar">
+    <h2>Screenshot <span class="muted">— {{ shot.taken_at.strftime("%Y-%m-%d %H:%M") }}</span></h2>
+    <a class="btn small" href="{{ url_for('workspaces.run_detail', workspace_id=ws.id, run_id=shot.run_id) }}">View task</a>
+  </div>
+  {% if shot.name %}
+  <a href="{{ url_for('workspaces.screenshot_file', workspace_id=ws.id, name=shot.name) }}" target="_blank" rel="noopener">
+    <img class="shot-full" alt="Screenshot of {{ t.host }}"
+         src="{{ url_for('workspaces.screenshot_file', workspace_id=ws.id, name=shot.name) }}">
+  </a>
+  {% else %}
+  <p class="muted">Capture failed: <span class="mono">{{ shot.error }}</span></p>
+  {% endif %}
+</div>
+{% endif %}
 
 <!-- Directory fuzz coverage (dedup ledger) -->
 <div class="card">
@@ -99,8 +142,36 @@
       {% if fingerprints.powered %}<div class="fp-row"><span class="fp-key">Powered-By</span>
         {% for x in fingerprints.powered %}<span class="chip">{{ x }}</span>{% endfor %}</div>{% endif %}
     {% else %}
-      <p class="muted">No fingerprints yet. Run the <strong>alive</strong> module (or fingerprint, once available) to populate this.</p>
+      <p class="muted">No fingerprints yet. Run the <strong>alive</strong> module to populate this.</p>
     {% endif %}
+
+    <details style="margin-top:12px">
+      <summary class="muted" style="cursor:pointer; font-size:12px">Recognised something Thoth didn't? Add a fingerprint →</summary>
+      <p class="muted" style="font-size:12px; margin:8px 0 6px">
+        Teach Thoth to label this platform everywhere. Case-insensitive substring match;
+        applies from the next alive check. Pre-filled from what we saw on this host.
+      </p>
+      <form method="post" action="{{ url_for('signatures.add') }}" class="note-form" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">
+        <input name="label" placeholder="Label, e.g. Salesforce" required style="width:170px">
+        <select name="field" style="width:auto">
+          <option value="body">in the page body</option>
+          <option value="header">in any response header</option>
+          <option value="server">in the Server header</option>
+          <option value="powered_by">in X-Powered-By</option>
+          <option value="cookie">in a cookie name</option>
+        </select>
+        <input name="needle" list="fp-seen" placeholder="Match text" required style="width:200px">
+        <datalist id="fp-seen">
+          {% for s in fingerprints.servers %}<option value="{{ s }}">{% endfor %}
+          {% for p in fingerprints.powered %}<option value="{{ p }}">{% endfor %}
+          {% if t.last_title %}<option value="{{ t.last_title }}">{% endif %}
+        </datalist>
+        <button class="btn" type="submit">Add fingerprint</button>
+        <a class="muted" style="font-size:12px" href="{{ url_for('signatures.index') }}">manage all →</a>
+      </form>
+    </details>
   </div>
 
   <!-- Module runs / dirsearches -->
@@ -157,6 +228,28 @@
   </table>
 </div>
 
+<!-- Import real dirsearch output -->
+<div class="card" id="import">
+  <h2>Import dirsearch results <span class="muted">— paste output from the real dirsearch</span></h2>
+  <p class="muted" style="font-size:12px">
+    Already fuzzed this host outside Thoth? Paste the output (or upload a report) and it lands here as
+    findings <strong>and</strong> goes into the dedup ledger, so a later fuzz won't repeat that work.
+    Understands the terminal output and every <span class="mono">--format</span>:
+    <span class="mono">json</span>, <span class="mono">csv</span>, <span class="mono">md</span>,
+    <span class="mono">plain</span>, <span class="mono">simple</span>.
+  </p>
+  <form method="post" enctype="multipart/form-data"
+        action="{{ url_for('workspaces.import_dirsearch', workspace_id=ws.id, target_id=t.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <textarea name="results" rows="8" class="mono" style="width:100%"
+              placeholder="[12:34:56] 200 -    1KB - /admin/&#10;[12:34:57] 301 -  169B  - /js  ->  {{ t.base_url }}/js/&#10;403 -  278B  - /.git/HEAD"></textarea>
+    <div class="note-form" style="margin-top:8px">
+      <input type="file" name="file" accept=".txt,.json,.csv,.md,.log">
+      <button class="btn primary" type="submit">Import results</button>
+    </div>
+  </form>
+</div>
+
 <!-- Notes -->
 <div class="card" id="notes">
   <h2>Notes</h2>
@@ -196,6 +289,7 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/persist.js') }}"></script>
 <script src="{{ url_for('static', filename='js/domain-page.js') }}"></script>
 <script src="{{ url_for('static', filename='js/response.js') }}"></script>
 <script src="{{ url_for('static', filename='js/activity.js') }}"></script>

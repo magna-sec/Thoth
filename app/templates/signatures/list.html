@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Fingerprints · Thoth{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Fingerprints</h1>
+  <span class="muted">{{ signatures|length }} custom · {{ builtin|length }} built-in</span>
+</div>
+
+<div class="card">
+  <h2>Add a signature</h2>
+  <p class="muted" style="font-size:13px">
+    Spotted a platform Thoth doesn't name yet? Teach it here. Matching is a
+    case-insensitive substring test against one part of the response, and new rules apply
+    from the <strong>next</strong> alive check — re-run <strong>Check all live</strong> to
+    label hosts you've already scanned.
+  </p>
+  <form method="post" action="{{ url_for('signatures.add') }}" class="note-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="label" placeholder="Label, e.g. Salesforce" required style="width:190px">
+    <select name="field" style="width:auto">
+      <option value="body">in the page body</option>
+      <option value="header">in any response header</option>
+      <option value="server">in the Server header</option>
+      <option value="powered_by">in X-Powered-By</option>
+      <option value="cookie">in a cookie name</option>
+    </select>
+    <input name="needle" placeholder="Match text, e.g. force.com" required style="width:220px">
+    <input name="notes" placeholder="Note (optional)" style="width:200px">
+    <button class="btn primary" type="submit">Add fingerprint</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Custom signatures</h2>
+  {% if signatures %}
+  <table class="data">
+    <thead><tr><th>Label</th><th>Matches when</th><th>Text</th><th>Note</th><th>Added by</th><th></th></tr></thead>
+    <tbody>
+      {% for s in signatures %}
+      <tr>
+        <td><span class="chip tech">{{ s.label }}</span></td>
+        <td class="muted">{{ s.field.replace("_", "-") }}</td>
+        <td class="mono sensitive">{{ s.needle }}</td>
+        <td class="muted">{{ s.notes or "" }}</td>
+        <td class="muted">{{ user_by_id.get(s.created_by, "—") }}
+          <span style="font-size:11px">{{ s.created_at.strftime("%Y-%m-%d") if s.created_at }}</span></td>
+        <td>
+          {% if current_user.is_admin %}
+          <form method="post" action="{{ url_for('signatures.delete', sig_id=s.id) }}" style="margin:0"
+                onsubmit="return confirm('Delete the {{ s.label }} signature?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn small danger-btn" type="submit">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No custom signatures yet. Add one above, or from a subdomain page when
+    you spot something Thoth didn't recognise.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Built in <span class="muted">— always active, no need to re-add these</span></h2>
+  <table class="data">
+    <thead><tr><th>Label</th><th>Matches when</th><th>Text</th></tr></thead>
+    <tbody>
+      {% for field, needle, label in builtin %}
+      <tr><td><span class="chip">{{ label }}</span></td>
+        <td class="muted">{{ field.replace("_", "-") }}</td>
+        <td class="mono">{{ needle }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

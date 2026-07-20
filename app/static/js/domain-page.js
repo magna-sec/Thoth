@@ -15,13 +15,17 @@
 
   // Filter page groups by the paths they contain
   const pf = document.getElementById('page-filter');
-  if (pf) pf.addEventListener('input', () => {
-    const q = pf.value.toLowerCase();
-    document.querySelectorAll('#page-groups .group-row').forEach(tr => {
-      const hay = (tr.dataset.paths || '').toLowerCase();
-      tr.style.display = hay.includes(q) ? '' : 'none';
-    });
-  });
+  if (pf) {
+    const applyPathFilter = () => {
+      const q = pf.value.toLowerCase();
+      document.querySelectorAll('#page-groups .group-row').forEach(tr => {
+        const hay = (tr.dataset.paths || '').toLowerCase();
+        tr.style.display = hay.includes(q) ? '' : 'none';
+      });
+    };
+    pf.addEventListener('input', applyPathFilter);
+    window.Thoth.persist('page-filter', [pf], applyPathFilter);
+  }
 
   // Standalone "Check live" on the header
   const btn = document.querySelector('.check-one[data-standalone]');

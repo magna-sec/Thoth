@@ -98,6 +98,24 @@ def test_results_filters_present(client, workspace):
         assert needle in page
 
 
+def test_filters_are_persisted_and_resettable(client, app, workspace):
+    """Sticky filters need persist.js loaded before the filter scripts, plus a visible
+    escape hatch on every filter bar."""
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="f.test", scheme="https")
+        db.session.add(t)
+        db.session.commit()
+        tid = t.id
+
+    page = client.get(f"/workspaces/{workspace}").data.decode()
+    assert page.index("js/persist.js") < page.index("js/results.js")
+    assert page.index("js/persist.js") < page.index("js/table.js")
+    assert 'id="rf-reset"' in page and 'id="df-reset"' in page
+
+    domain = client.get(f"/workspaces/{workspace}/domains/{tid}").data.decode()
+    assert domain.index("js/persist.js") < domain.index("js/domain-page.js")
+
+
 def test_checkall_creates_alive_run(client, app, workspace):
     with app.app_context():
         db.session.add(Target(workspace_id=workspace, host="a.test", scheme="https"))

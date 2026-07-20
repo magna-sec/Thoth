@@ -77,5 +77,5 @@ def start():
     if target_id and len(target_ids or []) == 1:
         return redirect(url_for("workspaces.domain_detail", workspace_id=ws.id,
                                 target_id=target_id))
-    anchor = "#fuzz" if module_name == "dirsearch" else "#findings"
+    anchor = {"dirsearch": "#fuzz", "screenshot": "#shots"}.get(module_name, "#findings")
     return redirect(url_for("workspaces.detail", workspace_id=ws.id) + anchor)

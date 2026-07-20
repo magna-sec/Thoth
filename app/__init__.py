@@ -31,11 +31,13 @@ def create_app(config_object=Config):
 
     from .auth.routes import auth_bp
     from .runs.routes import runs_bp
+    from .signatures.routes import sigs_bp
     from .workspaces.routes import ws_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(ws_bp)
     app.register_blueprint(runs_bp)
+    app.register_blueprint(sigs_bp)
 
     from .cli import register_cli
     register_cli(app)
@@ -97,6 +99,7 @@ def _lightweight_migrate():
             "last_server": "VARCHAR(200)",
             "last_title": "VARCHAR(300)",
             "last_tech": "VARCHAR(300)",
+            "open_ports": "VARCHAR(120)",
             "ip": "VARCHAR(64)",
             "asn": "VARCHAR(16)",
             "asn_name": "VARCHAR(200)",

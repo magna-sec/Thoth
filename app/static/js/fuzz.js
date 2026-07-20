@@ -1,6 +1,7 @@
 // Directory Fuzzing tab: subdomain selection helpers + live console.
 (function () {
-  const items = () => [...document.querySelectorAll('.fz-item input[type=checkbox]')];
+  // Scoped to this form — the Screenshots tab reuses .fz-item for its own picker.
+  const items = () => [...document.querySelectorAll('#fuzz-form .fz-item input[type=checkbox]')];
   const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', fn); };
 
   on('fz-all', () => items().forEach(c => (c.checked = true)));

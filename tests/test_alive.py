@@ -1,11 +1,22 @@
-"""alive module: fingerprinting, WAF detection, and multi-threaded batch run."""
+"""alive module: fingerprinting, WAF detection, alt-port sweep, multi-threaded batch run."""
+import socket
 import time
 import types
 
 from app.extensions import db
 from app.models import Finding, Run, Target
-from app.modules.alive import _detect_waf, _fingerprint
+from app.modules.alive import (DEFAULT_EXTRA_PORTS, _detect_waf, _fingerprint,
+                               _probe_ports, parse_ports)
 from app.tasks import run_module_task
+
+
+def _closed_port():
+    """Grab a port number, then release it, so connections to it are refused."""
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
 
 
 def _resp(headers=None, text="", cookies=()):
@@ -25,6 +36,68 @@ def test_waf_detection_variants():
     assert "Sucuri" in _detect_waf(_resp(headers={"X-Sucuri-ID": "1"}))
     assert "Imperva Incapsula" in _detect_waf(_resp(cookies=["visid_incap_1"]))
     assert _detect_waf(_resp(headers={"Server": "nginx"})) == []
+
+
+def test_parse_ports():
+    assert parse_ports(None) == list(DEFAULT_EXTRA_PORTS)
+    assert parse_ports("8080,8443") == [8080, 8443]
+    assert parse_ports(" 8080 ; 8443 , 8080 ") == [8080, 8443]  # trimmed and deduped
+    assert parse_ports("") == []                                 # opt out entirely
+    assert parse_ports("nope,0,99999,8081") == [8081]            # junk dropped
+
+
+def test_probe_ports_reports_only_listening_ports(app, mock_target):
+    found = _probe_ports("127.0.0.1", [mock_target.port, _closed_port()],
+                         timeout=3, verify=False, proxies=None)
+    assert [p["port"] for p in found] == [mock_target.port]
+    assert found[0]["status_code"] == 404 and found[0]["scheme"] == "http"
+
+
+def test_probe_ports_picks_scheme_by_convention(app):
+    # 8443 is assumed TLS, 8080 plain — checked without any listener via the URL we build.
+    assert _probe_ports("127.0.0.1", [], 1, False, None) == []
+    from app.modules.alive import _scheme_for_port
+    assert _scheme_for_port(8443) == "https"
+    assert _scheme_for_port(8080) == "http"
+
+
+def test_alive_marks_open_alt_ports(app, workspace, mock_target, monkeypatch):
+    """A host dead on its primary port but answering on 8080-style ports gets marked."""
+    monkeypatch.setattr("app.modules.alive.enrich", lambda host: {})
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="127.0.0.1", scheme="http",
+                   port=_closed_port())
+        db.session.add(t)
+        run = Run(workspace_id=workspace, module="alive",
+                  config_json={"timeout": 3, "extra_ports": str(mock_target.port)})
+        db.session.add(run)
+        db.session.commit()
+        tid, rid = t.id, run.id
+        run_module_task.run(rid)
+        db.session.remove()
+
+        t = db.session.get(Target, tid)
+        assert t.last_alive is False                  # primary port really is down...
+        assert t.open_ports == str(mock_target.port)  # ...but the alt port answered
+        f = Finding.query.filter_by(run_id=rid, target_id=tid).one()
+        assert f.extra_json["open_ports"][0]["port"] == mock_target.port
+        assert f"open port {mock_target.port}" in db.session.get(Run, rid).log
+
+
+def test_alive_can_skip_the_port_sweep(app, workspace, mock_target, monkeypatch):
+    monkeypatch.setattr("app.modules.alive.enrich", lambda host: {})
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="127.0.0.1", scheme="http",
+                   port=mock_target.port)
+        db.session.add(t)
+        run = Run(workspace_id=workspace, module="alive",
+                  config_json={"timeout": 3, "extra_ports": ""})
+        db.session.add(run)
+        db.session.commit()
+        tid, rid = t.id, run.id
+        run_module_task.run(rid)
+        db.session.remove()
+        assert db.session.get(Target, tid).open_ports is None
 
 
 def test_alive_is_multithreaded(app, workspace, mock_target, monkeypatch):
@@ -53,7 +126,9 @@ def test_alive_is_multithreaded(app, workspace, mock_target, monkeypatch):
             for _ in range(6):
                 db.session.add(Target(workspace_id=workspace, host="127.0.0.1",
                                       scheme="http", port=port))
-            run = Run(workspace_id=workspace, module="alive", config_json={})
+            # No alt-port sweep here: this test is timing the concurrency of the probes.
+            run = Run(workspace_id=workspace, module="alive",
+                      config_json={"extra_ports": ""})
             db.session.add(run)
             db.session.commit()
             rid = run.id

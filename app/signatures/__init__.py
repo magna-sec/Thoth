@@ -1,0 +1,1 @@
+"""Operator-managed fingerprint signatures."""

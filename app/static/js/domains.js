@@ -3,7 +3,7 @@
   const meta = document.querySelector('meta[name=csrf-token]');
   const csrf = meta ? meta.content : '';
 
-  function colour(card, code, alive, checkedAt, waf) {
+  function colour(card, code, alive, checkedAt, waf, ports) {
     const live = alive ? 'up' : 'down';
     card.classList.remove('status-up', 'status-down', 'status-na');
     card.classList.add('status-' + live);
@@ -17,7 +17,10 @@
     const chk = card.querySelector('.dc-checked');
     if (chk && checkedAt) chk.textContent = 'checked ' + checkedAt;
     const wafBox = card.querySelector('.dc-waf');
-    if (wafBox) wafBox.innerHTML = waf ? `<span class="chip waf">🛡 ${waf}</span>` : '';
+    if (wafBox) {
+      wafBox.innerHTML = (waf ? `<span class="chip waf">🛡 ${esc(waf)}</span>` : '')
+        + (ports ? `<span class="chip port" title="Alt-HTTP port(s) answering on this host">⚡ ${esc(ports)}</span>` : '');
+    }
     applyFilters();
   }
 
@@ -34,7 +37,7 @@
       });
       if (!r.ok) return;
       const d = await r.json();
-      colour(card, d.status_code, d.alive, d.checked_at, d.waf);
+      colour(card, d.status_code, d.alive, d.checked_at, d.waf, d.open_ports);
       const srv = card.querySelector('.dc-server');
       if (srv) srv.innerHTML = d.server ? `<span class="dc-srv">${esc(d.server)}</span>` : '';
       const ttl = card.querySelector('.dc-title');
@@ -71,10 +74,13 @@
     if (count) count.textContent = shown;
   }
   window.applyFilters = applyFilters;
-  [search, fLive, fStatus].forEach(el => {
+  const controls = [search, fLive, fStatus];
+  controls.forEach(el => {
     if (el) el.addEventListener('input', applyFilters);
     if (el) el.addEventListener('change', applyFilters);
   });
+  window.Thoth.persist('domain-filters', controls, applyFilters,
+                       document.getElementById('df-reset'));
 
   // "Check all live" is now a real alive run (see the form in detail.html) so it is
   // recorded as a run and feeds Analysis. Per-card "Check live" stays an instant probe.

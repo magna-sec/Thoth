@@ -78,6 +78,7 @@ class Target(db.Model):
     last_server = db.Column(db.String(200)) # Server header from last probe
     last_title = db.Column(db.String(300))  # <title> from last probe
     last_tech = db.Column(db.String(300))   # detected tech, comma-separated
+    open_ports = db.Column(db.String(120))  # alt-HTTP ports answering, e.g. "8080, 8443"
     ip = db.Column(db.String(64))           # resolved IP
     asn = db.Column(db.String(16))          # origin ASN (e.g. "15169")
     asn_name = db.Column(db.String(200))    # ASN owner (e.g. "GOOGLE, US")
@@ -170,6 +171,27 @@ class Note(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     target = db.relationship("Target", back_populates="notes")
+
+
+class Signature(db.Model):
+    """An operator-added fingerprint rule: "if <needle> shows up in <field>, label it X".
+
+    Deliberately global rather than per-workspace — recognising Salesforce is knowledge the
+    whole team keeps, not something to re-enter per engagement. Matching is a
+    case-insensitive substring test, so rules stay predictable and can't blow up a scan.
+    """
+    __tablename__ = "signatures"
+    FIELDS = ("server", "powered_by", "header", "cookie", "body")
+
+    id = db.Column(db.Integer, primary_key=True)
+    label = db.Column(db.String(80), nullable=False)   # what to call it, e.g. "Salesforce"
+    field = db.Column(db.String(20), nullable=False)   # one of FIELDS
+    needle = db.Column(db.String(200), nullable=False)  # substring to look for
+    notes = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint("field", "needle", "label", name="uq_signature"),)
 
 
 class TestedPath(db.Model):

@@ -63,11 +63,16 @@
   }
 
   window.applyResultsFilter = function () { refreshHosts(); apply(); };
-  [q, host, status, exStatus, exSize, waf, hideRedir, hideDead].forEach(el => {
+  const controls = [q, host, status, exStatus, exSize, waf, hideRedir, hideDead];
+  controls.forEach(el => {
     if (!el) return;
     el.addEventListener('input', apply);
     el.addEventListener('change', apply);
   });
+
+  // Populate the host dropdown before restoring, so a remembered host still matches
+  // an option. persist() then restores and applies for us.
   refreshHosts();
-  apply();
+  window.Thoth.persist('results-filters', controls, window.applyResultsFilter,
+                       document.getElementById('rf-reset'));
 })();

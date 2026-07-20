@@ -8,7 +8,7 @@
   <h1>Task #{{ run.id }} — {{ run.module }}</h1>
   <span class="badge run-{{ run.status }}" id="run-badge">{{ run.status }}</span>
   {% if run.status in ("queued", "running") %}<span class="spinner"></span>{% endif %}
-  {% if run.status in ("done", "error") %}
+  {% if run.status in ("done", "error") and rerunnable %}
   <form method="post" action="{{ url_for('workspaces.rerun', workspace_id=ws.id, run_id=run.id) }}" style="margin:0 0 0 auto">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn small" type="submit" title="{{ 'Re-run ignoring the dedup ledger' if run.module == 'dirsearch' else 'Run this task again' }}">Re-run{{ " (force)" if run.module == "dirsearch" }} ↻</button>

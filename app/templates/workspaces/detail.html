@@ -12,6 +12,7 @@
   <button class="tab" data-tab="findings">Results</button>
   <button class="tab" data-tab="analysis">Analysis</button>
   <button class="tab" data-tab="domains">Subdomains</button>
+  <button class="tab" data-tab="shots">Screenshots</button>
   <button class="tab" data-tab="fuzz">Directory Fuzzing</button>
   <button class="tab" data-tab="runs">Tasks</button>
   {% if current_user.is_admin %}<button class="tab danger-tab" data-tab="danger">Wipe</button>{% endif %}
@@ -34,6 +35,12 @@
         <form method="post" action="{{ url_for('workspaces.check_all', workspace_id=ws.id) }}" style="margin:0">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn primary" type="submit">Check all live ▶</button>
+        </form>
+        <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+          <input type="hidden" name="module" value="screenshot">
+          <button class="btn" type="submit" title="Headless-browser screenshot of every subdomain">Screenshot all 📷</button>
         </form>
         <button class="btn tab-jump" data-goto="domains" type="button">Manage subdomains</button>
         <button class="btn tab-jump" data-goto="fuzz" type="button">Directory fuzzing</button>
@@ -79,6 +86,7 @@
         </select>
         <label class="ctl"><input type="checkbox" id="rf-hideredir"> Hide 3xx</label>
         <label class="ctl"><input type="checkbox" id="rf-hidedead"> Hide dead</label>
+        <button class="btn small" type="button" id="rf-reset" title="Filters are remembered across refreshes — this clears them">Reset filters</button>
       </div>
     </div>
     <table class="data sortable" id="findings-table">
@@ -225,6 +233,7 @@
         <option value="2">2xx</option><option value="3">3xx</option>
         <option value="4">4xx</option><option value="5">5xx</option>
       </select>
+      <button class="btn small" type="button" id="df-reset" title="Filters are remembered across refreshes — this clears them">Reset filters</button>
       <form method="post" action="{{ url_for('workspaces.check_all', workspace_id=ws.id) }}" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn primary" type="submit" title="Runs the alive module across all subdomains (recorded + feeds Analysis)">Check all live ▶</button>
@@ -251,7 +260,8 @@
         {{ t.scheme }}{% if t.port %}:{{ t.port }}{% endif %} ·
         <span class="dc-checked">{% if t.last_checked_at %}checked {{ t.last_checked_at.strftime("%H:%M:%S") }}{% else %}not checked{% endif %}</span>
       </div>
-      <div class="dc-waf">{% if t.last_waf %}<span class="chip waf">🛡 {{ t.last_waf }}</span>{% endif %}</div>
+      <div class="dc-waf">{% if t.last_waf %}<span class="chip waf">🛡 {{ t.last_waf }}</span>{% endif %}
+        {% if t.open_ports %}<span class="chip port" title="Alt-HTTP port(s) answering on this host">⚡ {{ t.open_ports }}</span>{% endif %}</div>
       <div class="dc-server muted">{% if t.last_server %}<span class="dc-srv">{{ t.last_server }}</span>{% endif %}</div>
       <div class="dc-title sensitive">{% if t.last_title %}{{ t.last_title }}{% endif %}</div>
       <div class="dc-modules">
@@ -272,6 +282,83 @@
     {% else %}
     <p class="muted">No subdomains yet. Add some above.</p>
     {% endfor %}
+  </div>
+</section>
+
+<!-- SCREENSHOTS -->
+<section class="tabpane" data-pane="shots" id="shots">
+  <div class="card">
+    <div class="table-toolbar">
+      <h2>Screenshots <span class="muted">— {{ shots|length }} of {{ domains|length }} subdomain(s) captured</span></h2>
+      <input type="text" id="shot-filter" class="filter" placeholder="Filter host…">
+    </div>
+    <form method="post" action="{{ url_for('runs.start') }}" id="shot-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+      <input type="hidden" name="module" value="screenshot">
+      <input type="hidden" name="cfg__bools" value="full_page,skip_dead,verify_tls,force">
+      <div class="fuzz-settings">
+        <label class="inline">Width <input type="number" name="cfg_width" value="1440" style="width:80px"></label>
+        <label class="inline">Height <input type="number" name="cfg_height" value="900" style="width:80px"></label>
+        <label class="inline">Timeout <input type="number" name="cfg_timeout" value="20" style="width:70px"></label>
+        <label class="inline">Threads <input type="number" name="cfg_threads" value="4" style="width:70px"></label>
+        <label class="inline" title="Requires Playwright; the Chrome fallback captures the viewport"><input type="checkbox" name="cfg_full_page"> Full page</label>
+        <label class="inline"><input type="checkbox" name="cfg_skip_dead" checked> Skip dead hosts</label>
+        <label class="inline"><input type="checkbox" name="cfg_verify_tls"> Verify TLS</label>
+        <label class="inline" title="Re-capture hosts that already have a screenshot"><input type="checkbox" name="cfg_force"> Re-capture</label>
+      </div>
+      <p class="muted" style="font-size:12px">Renders each site in a headless browser (Playwright if installed, otherwise a local Chrome/Chromium/Edge). Hosts already captured are skipped unless <strong>Re-capture</strong> is ticked. Leave the selection empty to shoot every subdomain.</p>
+      <div class="table-toolbar" style="margin-top:10px">
+        <h2 style="margin:0">Select subdomains <span class="muted">(none = all)</span></h2>
+        <div class="domain-filters">
+          <button class="btn small" type="button" id="sh-all">Select all</button>
+          <button class="btn small" type="button" id="sh-alive">Select alive</button>
+          <button class="btn small" type="button" id="sh-missing">Select uncaptured</button>
+          <button class="btn small" type="button" id="sh-clear">Clear</button>
+        </div>
+      </div>
+      <div class="fuzz-targets">
+        {% for t in domains %}
+        <label class="fz-item" data-live="{{ 'up' if t.last_alive else ('na' if t.last_alive is none else 'down') }}"
+               data-shot="{{ '1' if shots.get(t.id) and shots[t.id].name else '0' }}">
+          <input type="checkbox" name="target_ids" value="{{ t.id }}">
+          <span class="sensitive mono">{{ t.host }}</span>
+          {% if shots.get(t.id) and shots[t.id].name %}<span class="chip" style="font-size:10px">📷</span>{% endif %}
+        </label>
+        {% else %}
+        <p class="muted">No subdomains yet — add some first.</p>
+        {% endfor %}
+      </div>
+      <button class="btn primary" type="submit" style="margin-top:12px">Take screenshots ▶</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Gallery</h2>
+    {% if shots %}
+    <div class="shot-grid" id="shot-grid">
+      {% for t in domains if shots.get(t.id) %}
+      {% set s = shots[t.id] %}
+      <figure class="shot" data-host="{{ t.host }}">
+        <a href="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">
+          {% if s.name %}
+          <img loading="lazy" alt="Screenshot of {{ t.host }}"
+               src="{{ url_for('workspaces.screenshot_file', workspace_id=ws.id, name=s.name) }}">
+          {% else %}
+          <div class="shot-failed" title="{{ s.error }}">capture failed</div>
+          {% endif %}
+        </a>
+        <figcaption>
+          <span class="sensitive mono">{{ t.host }}</span>
+          {% if s.status_code %}<span class="badge s{{ s.status_code // 100 }}xx">{{ s.status_code }}</span>{% endif %}
+          <span class="muted">{{ s.taken_at.strftime("%m-%d %H:%M") }}</span>
+        </figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No screenshots yet. Pick some subdomains above (or none for all) and run a capture.</p>
+    {% endif %}
   </div>
 </section>
 
@@ -420,11 +507,13 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/persist.js') }}"></script>
 <script src="{{ url_for('static', filename='js/table.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stream.js') }}"></script>
 <script src="{{ url_for('static', filename='js/domains.js') }}"></script>
 <script src="{{ url_for('static', filename='js/results.js') }}"></script>
 <script src="{{ url_for('static', filename='js/fuzz.js') }}"></script>
+<script src="{{ url_for('static', filename='js/shots.js') }}"></script>
 <script src="{{ url_for('static', filename='js/response.js') }}"></script>
 <script src="{{ url_for('static', filename='js/activity.js') }}"></script>
 {% endblock %}

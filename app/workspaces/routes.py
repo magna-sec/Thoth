@@ -1,27 +1,34 @@
 """Workspace CRUD, target import, live findings stream, and wipe."""
 import json
+import re
 import shutil
 import socket
 import threading
 import time
 from collections import Counter
+from datetime import datetime
 from urllib.parse import urlparse
 
 import requests
 
 from flask import (Blueprint, Response, abort, current_app, flash, jsonify,
-                   redirect, render_template, request, stream_with_context, url_for)
+                   redirect, render_template, request, send_from_directory,
+                   stream_with_context, url_for)
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from ..auth import admin_required
 from ..extensions import db
+from ..importers import ImportError_, ledger_key, parse_dirsearch
 from ..models import (Finding, Note, Run, Target, TestedPath, User, Workspace,
                       WorkspaceMember)
-from ..modules import all_modules
+from ..modules import all_modules, get_module
 from ..modules.alive import probe
 from ..modules.base import to_proxies
+from ..modules.screenshot import screenshot_dir
 from ..realtime import publish, subscribe
+
+DIRSEARCH_IMPORT = "dirsearch-import"  # Run.module for pasted results (not a live module)
 
 ws_bp = Blueprint("workspaces", __name__, url_prefix="/workspaces")
 
@@ -88,7 +95,7 @@ def detail(workspace_id):
                            domains=domains, mod_runs=mod_runs, status_dist=status_dist,
                            dicc_count=_default_wordlist_count(), run_counts=run_counts,
                            run_scope=run_scope, user_by_id=user_by_id, fuzz_cov=fuzz_cov,
-                           analysis=analysis)
+                           analysis=analysis, shots=_screenshots(ws.id))
 
 
 def _run_scope_hosts(run, host_by_id):
@@ -118,7 +125,51 @@ def run_detail(workspace_id, run_id):
         duration = round((run.finished_at - run.started_at).total_seconds(), 1)
     return render_template("workspaces/run.html", ws=ws, run=run, findings=findings,
                            config=cfg, scope=scope, scope_all=len(host_by_id),
-                           creator=creator, duration=duration)
+                           creator=creator, duration=duration,
+                           rerunnable=get_module(run.module) is not None)
+
+
+# ------------------------------------------------------------------ screenshots
+
+_SHOT_NAME_RE = re.compile(r"^t\d+_r\d+\.png$")
+
+
+@ws_bp.route("/<int:workspace_id>/screenshots/<name>")
+@login_required
+def screenshot_file(workspace_id, name):
+    """Serve a captured PNG. The name pattern is fixed by the screenshot module, so
+    anything else is rejected outright rather than path-normalized."""
+    _get_member_workspace(workspace_id)
+    if not _SHOT_NAME_RE.match(name):
+        abort(404)
+    directory = screenshot_dir(workspace_id)
+    if not (directory / name).exists():
+        abort(404)
+    return send_from_directory(directory, name, mimetype="image/png")
+
+
+def _screenshots(workspace_id):
+    """Latest screenshot per target: target_id -> {name, taken_at, run_id, error, ...}."""
+    rows = (db.session.query(Finding)
+            .join(Run, Finding.run_id == Run.id)
+            .filter(Finding.workspace_id == workspace_id, Run.module == "screenshot")
+            .order_by(Finding.found_at.desc()).all())
+    latest = {}
+    for f in rows:
+        extra = f.extra_json or {}
+        if f.target_id in latest or not (extra.get("screenshot")
+                                         or extra.get("screenshot_error")):
+            continue
+        latest[f.target_id] = {
+            "name": extra.get("screenshot"),
+            "error": extra.get("screenshot_error"),
+            "taken_at": f.found_at,
+            "run_id": f.run_id,
+            "status_code": f.status_code,
+            "title": extra.get("title"),
+            "bytes": extra.get("bytes"),
+        }
+    return latest
 
 
 @ws_bp.route("/<int:workspace_id>/runs/<int:run_id>/rerun", methods=["POST"])
@@ -129,6 +180,9 @@ def rerun(workspace_id, run_id):
     run = db.session.get(Run, run_id)
     if run is None or run.workspace_id != ws.id:
         abort(404)
+    if get_module(run.module) is None:  # e.g. an import — there is nothing to re-execute
+        flash(f"'{run.module}' tasks can't be re-run.", "error")
+        return redirect(url_for("workspaces.run_detail", workspace_id=ws.id, run_id=run.id))
     from ..runs.routes import launch_run
     cfg = dict(run.config_json or {})
     targets = cfg.pop("_targets", None)
@@ -377,7 +431,10 @@ def domain_detail(workspace_id, target_id):
                                          "powered": sorted(powered), "waf": sorted(waf)},
                            module_runs=module_runs, page_groups=page_groups,
                            total_findings=len(findings), last_live=last_live,
-                           notes=t.notes, coverage=coverage)
+                           notes=t.notes, coverage=coverage,
+                           shot=_screenshots(ws.id).get(t.id),
+                           open_ports=[p.strip() for p in (t.open_ports or "").split(",")
+                                       if p.strip()])
 
 
 def _resolve_ips(host, timeout=3.0):
@@ -395,6 +452,82 @@ def _resolve_ips(host, timeout=3.0):
     th.start()
     th.join(timeout)
     return out
+
+
+@ws_bp.route("/<int:workspace_id>/domains/<int:target_id>/import-dirsearch",
+             methods=["POST"])
+@login_required
+def import_dirsearch(workspace_id, target_id):
+    """Fold pasted (or uploaded) real-dirsearch output into this subdomain.
+
+    Recorded as a completed task so it shows up like any other, and every imported path
+    is written to the dedup ledger — the point being that Thoth won't re-fuzz work the
+    operator already did elsewhere.
+    """
+    ws = _get_member_workspace(workspace_id)
+    t = db.session.get(Target, target_id)
+    if t is None or t.workspace_id != ws.id:
+        abort(404)
+
+    raw = request.form.get("results", "")
+    upload = request.files.get("file")
+    if upload and upload.filename:
+        raw += "\n" + upload.read().decode("utf-8", errors="ignore")
+    try:
+        rows, hosts = parse_dirsearch(raw)
+    except ImportError_ as e:
+        flash(str(e), "error")
+        return redirect(url_for("workspaces.domain_detail", workspace_id=ws.id,
+                                target_id=t.id) + "#import")
+
+    now = datetime.utcnow()
+    run = Run(workspace_id=ws.id, module=DIRSEARCH_IMPORT,
+              config_json={"_targets": [t.id], "source": upload.filename
+                           if (upload and upload.filename) else "pasted"},
+              status="done", created_by=current_user.id, started_at=now, finished_at=now,
+              progress_done=len(rows), progress_total=len(rows))
+    db.session.add(run)
+    db.session.flush()
+
+    # Existing ledger keys for this host, so we never violate the unique constraint.
+    known = {(p, w) for p, w in db.session.query(TestedPath.parent_path, TestedPath.word)
+             .filter_by(workspace_id=ws.id, host=t.host).all()}
+    log = [f"Importing {len(rows)} result(s) from dirsearch output into {t.host}"]
+    ledger_added = 0
+    for row in sorted(rows, key=lambda r: r["path"]):
+        db.session.add(Finding(
+            workspace_id=ws.id, run_id=run.id, target_id=t.id, path=row["path"],
+            status_code=row["status_code"], content_length=row["content_length"],
+            redirect=row["redirect"], found_at=now,
+            extra_json={"module": DIRSEARCH_IMPORT, "imported": True}))
+        parent, word = ledger_key(row["path"])
+        if word and (parent, word) not in known:
+            known.add((parent, word))
+            db.session.add(TestedPath(workspace_id=ws.id, host=t.host, parent_path=parent,
+                                      word=word, status_code=row["status_code"],
+                                      first_tested_at=now))
+            ledger_added += 1
+        log.append(f"{row['status_code'] or '---'} - {row['path']}"
+                   + (f"  ->  {row['redirect']}" if row["redirect"] else ""))
+
+    foreign = {h for h in hosts if h != t.host}
+    if foreign:
+        log.append(f"Note: output referenced other host(s): {', '.join(sorted(foreign))}")
+    log.append("")
+    log.append(f"Import Completed — {len(rows)} result(s), "
+               f"{ledger_added} new dedup-ledger entr(y/ies)")
+    run.log = "\n".join(f"{now:%H:%M:%S} {line}" if line else "" for line in log) + "\n"
+    db.session.commit()
+    for f in Finding.query.filter_by(run_id=run.id).all():
+        publish(ws.id, {"type": "finding", "run_id": run.id, "finding": f.to_dict()})
+
+    msg = (f"Imported {len(rows)} dirsearch result(s) into {t.host} "
+           f"({ledger_added} new ledger entries).")
+    if foreign:
+        msg += (f" Heads up: the output mentioned {', '.join(sorted(foreign))}, "
+                f"not {t.host}.")
+    flash(msg, "error" if foreign else "info")
+    return redirect(url_for("workspaces.run_detail", workspace_id=ws.id, run_id=run.id))
 
 
 @ws_bp.route("/<int:workspace_id>/domains/<int:target_id>/notes", methods=["POST"])
@@ -496,6 +629,7 @@ def check_domain(workspace_id, target_id):
         "status_code": t.last_status_code,
         "alive": t.last_alive,
         "waf": t.last_waf,
+        "open_ports": t.open_ports,
         "server": t.last_server,
         "title": t.last_title,
         "checked_at": t.last_checked_at.strftime("%H:%M:%S") if t.last_checked_at else None,

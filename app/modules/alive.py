@@ -1,4 +1,5 @@
 """Alive / reachability module + a reusable single-domain probe."""
+import socket
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -8,10 +9,15 @@ import requests
 from ..enrich import enrich
 from .base import Module, register
 
+# Alt-HTTP ports worth a look on every host: admin panels, dev copies, and app servers
+# hide here far more often than on 80/443.
+DEFAULT_EXTRA_PORTS = (8080, 8443)
 
-def _do_probe(url, timeout, verify, proxies):
+
+def _do_probe(url, timeout, verify, proxies, signatures=None):
     """Pure HTTP probe of a URL — no ORM/DB touch, so it is safe to call from worker
-    threads. Returns the normalized result dict."""
+    threads. `signatures` is pre-loaded custom fingerprint data (see load_signatures()).
+    Returns the normalized result dict."""
     started = time.monotonic()
     try:
         r = requests.get(url, timeout=timeout, allow_redirects=True, verify=verify,
@@ -24,7 +30,7 @@ def _do_probe(url, timeout, verify, proxies):
             "extra": {
                 "server": r.headers.get("Server"),
                 "powered_by": r.headers.get("X-Powered-By"),
-                "tech": _fingerprint(r),
+                "tech": _fingerprint(r, signatures),
                 "waf": _detect_waf(r),
                 "title": _title(r.text),
                 "elapsed_ms": elapsed_ms,
@@ -36,12 +42,72 @@ def _do_probe(url, timeout, verify, proxies):
                 "extra": {"alive": False, "error": type(e).__name__}}
 
 
+def parse_ports(raw):
+    """Parse a '8080, 8443' style config value into a list of valid port numbers."""
+    if raw is None:
+        return list(DEFAULT_EXTRA_PORTS)
+    ports = []
+    for chunk in str(raw).replace(";", ",").split(","):
+        chunk = chunk.strip()
+        if not chunk.isdigit():
+            continue
+        port = int(chunk)
+        if 0 < port < 65536 and port not in ports:
+            ports.append(port)
+    return ports
+
+
+def _scheme_for_port(port):
+    """8443/9443/443 speak TLS by convention; everything else we try as plain HTTP."""
+    return "https" if str(port).endswith("443") else "http"
+
+
+def _port_open(host, port, timeout):
+    """Cheap TCP connect test, so a closed port costs one RTT instead of a full HTTP wait."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _probe_ports(host, ports, timeout, verify, proxies, skip=(), signatures=None):
+    """Check alt-HTTP ports on a host. Returns one dict per port that answered.
+
+    Pure network work (no ORM), so this is safe inside a worker thread.
+    """
+    found = []
+    for port in ports:
+        if port in skip:
+            continue
+        scheme = _scheme_for_port(port)
+        # Through a proxy we cannot pre-check the socket ourselves — let the proxy try.
+        if not proxies and not _port_open(host, port, min(timeout, 5)):
+            continue
+        res = _do_probe(f"{scheme}://{host}:{port}", timeout, verify, proxies, signatures)
+        if res["status_code"] is None:
+            continue
+        found.append({
+            "port": port,
+            "scheme": scheme,
+            "url": f"{scheme}://{host}:{port}",
+            "status_code": res["status_code"],
+            "title": res["extra"].get("title"),
+            "server": res["extra"].get("server"),
+            "tech": res["extra"].get("tech"),
+        })
+    return found
+
+
 def _apply(target, result):
     """Write a probe result onto the target's cached last_* fields (main thread only)."""
     now = datetime.utcnow()
     target.last_status_code = result["status_code"]
     target.last_alive = result["extra"]["alive"]
     target.last_checked_at = now
+    ports = result["extra"].get("open_ports")
+    if ports is not None:  # None = ports weren't checked, so don't clear a previous result
+        target.open_ports = ", ".join(str(p["port"]) for p in ports) or None
     if result["extra"]["alive"]:
         target.last_alive_at = now
         target.last_waf = ", ".join(result["extra"].get("waf") or []) or None
@@ -60,9 +126,17 @@ def _apply_enrich(target, info):
         target.country = info.get("country")
 
 
-def probe(target, timeout=8, verify=False, proxies=None):
-    """Probe a single target and update its cached fields (used by the quick-check)."""
-    result = _do_probe(target.base_url, timeout, verify, proxies)
+def probe(target, timeout=8, verify=False, proxies=None, extra_ports=DEFAULT_EXTRA_PORTS):
+    """Probe a single target and update its cached fields (used by the quick-check).
+
+    Also sweeps the alt-HTTP ports so "Check live" marks 8080/8443 exposure.
+    """
+    signatures = load_signatures()
+    result = _do_probe(target.base_url, timeout, verify, proxies, signatures)
+    if extra_ports:
+        result["extra"]["open_ports"] = _probe_ports(
+            target.host, extra_ports, timeout, verify, proxies,
+            skip=(target.port,) if target.port else (), signatures=signatures)
     _apply(target, result)
     return result
 
@@ -105,35 +179,76 @@ def _detect_waf(r):
     return hits
 
 
-# Lightweight header/body signatures. The dedicated fingerprint module (M5) will
-# extend this; for now it gives the domain page real tech chips from a single GET.
-_SIGS = [
-    ("Microsoft-IIS", "IIS"), ("Apache", "Apache"), ("nginx", "nginx"),
-    ("cloudflare", "Cloudflare"), ("gws", "Google"), ("openresty", "OpenResty"),
-    ("LiteSpeed", "LiteSpeed"),
+# Built-in signatures as (field, needle, label). Operators extend this set at runtime from
+# the Fingerprints page — see load_signatures() — and both go through the same matcher.
+BUILTIN_SIGNATURES = [
+    # Web servers / CDNs (Server header)
+    ("server", "Microsoft-IIS", "IIS"), ("server", "Apache", "Apache"),
+    ("server", "nginx", "nginx"), ("server", "cloudflare", "Cloudflare"),
+    ("server", "gws", "Google"), ("server", "openresty", "OpenResty"),
+    ("server", "LiteSpeed", "LiteSpeed"),
+    # Application stacks (X-Powered-By)
+    ("powered_by", "ASP.NET", "ASP.NET"), ("powered_by", "PHP", "PHP"),
+    ("powered_by", "Express", "Express"), ("powered_by", "Next.js", "Next.js"),
+    # Front-end frameworks / CMS (body)
+    ("body", "__NEXT_DATA__", "Next.js"), ("body", "data-reactroot", "React"),
+    ("body", "react", "React"), ("body", "ng-version", "Angular"),
+    ("body", "wp-content", "WordPress"), ("body", "Drupal", "Drupal"),
+    ("body", "__NUXT__", "Nuxt"), ("body", "vue", "Vue"),
+    # Hosted platforms — the ones that hide behind a generic Server header
+    ("cookie", "BrowserId", "Salesforce"), ("body", "sfdcPage", "Salesforce"),
+    ("body", "force.com", "Salesforce"), ("header", "x-salesforce", "Salesforce"),
+    ("body", "cdn.shopify.com", "Shopify"), ("header", "x-shopify", "Shopify"),
+    ("body", "hs-scripts.com", "HubSpot"),
+    ("body", "static.parastorage.com", "Wix"),
+    ("body", "cdn.sanity.io", "Sanity"),
+    ("header", "x-served-by: cache", "Fastly"),
+    ("header", "x-vercel-id", "Vercel"),
+    ("header", "x-nf-request-id", "Netlify"),
+    ("header", "x-atlassian", "Atlassian"),
+    ("body", "ServiceNow", "ServiceNow"),
+    ("body", "SharePoint", "SharePoint"),
+    ("header", "x-drupal-cache", "Drupal"),
 ]
-_POWERED = [("ASP.NET", "ASP.NET"), ("PHP", "PHP"), ("Express", "Express"),
-            ("Next.js", "Next.js")]
-_BODY = [("__NEXT_DATA__", "Next.js"), ("data-reactroot", "React"), ("react", "React"),
-         ("ng-version", "Angular"), ("wp-content", "WordPress"), ("Drupal", "Drupal"),
-         ("__NUXT__", "Nuxt"), ("vue", "Vue")]
 
 
-def _fingerprint(r):
+def load_signatures():
+    """Custom signatures from the DB as (field, needle, label) tuples.
+
+    Must be called on the main thread — the result is plain data that worker threads can
+    then match against without touching the ORM.
+    """
+    from ..models import Signature
+    try:
+        return [(s.field, s.needle, s.label) for s in Signature.query.all()]
+    except Exception:  # noqa: BLE001 - a missing table must never break a scan
+        return []
+
+
+def _haystacks(r):
+    """The searchable surfaces of a response, lowercased once for all signatures."""
+    return {
+        "server": (r.headers.get("Server") or "").lower(),
+        "powered_by": (r.headers.get("X-Powered-By") or "").lower(),
+        "header": "\n".join(f"{k}: {v}" for k, v in r.headers.items()).lower(),
+        "cookie": " ".join(r.cookies.keys()).lower(),
+        "body": r.text[:20000].lower(),
+    }
+
+
+def _fingerprint(r, signatures=None):
+    """Label the tech behind a response. `signatures` adds operator-defined rules on top
+    of the built-ins (pass the result of load_signatures())."""
     found = []
-    server = r.headers.get("Server", "")
-    powered = r.headers.get("X-Powered-By", "")
-    body = r.text[:20000]
-    for needle, label in _SIGS:
-        if needle.lower() in server.lower() and label not in found:
+    hay = _haystacks(r)
+    for field, needle, label in list(BUILTIN_SIGNATURES) + list(signatures or []):
+        surface = hay.get(field)
+        if surface and needle.lower() in surface and label not in found:
             found.append(label)
-    for needle, label in _POWERED:
-        if needle.lower() in powered.lower() and label not in found:
-            found.append(label)
-    if r.headers.get("X-Generator"):
-        found.append(r.headers["X-Generator"].split("/")[0].strip())
-    for needle, label in _BODY:
-        if needle.lower() in body.lower() and label not in found:
+    generator = r.headers.get("X-Generator")
+    if generator:
+        label = generator.split("/")[0].strip()
+        if label and label not in found:
             found.append(label)
     return found
 
@@ -151,11 +266,14 @@ class AliveModule(Module):
             {"name": "timeout", "type": "number", "default": 10, "label": "Timeout (s)"},
             {"name": "verify_tls", "type": "bool", "default": False, "label": "Verify TLS"},
             {"name": "threads", "type": "number", "default": 30, "label": "Threads"},
+            {"name": "extra_ports", "type": "text", "default": "8080,8443",
+             "label": "Also check ports", "help": "Blank to check only the primary port"},
         ]
 
     def run(self, target, config, ctx):
         res = probe(target, timeout=float(config.get("timeout", 10)),
-                    verify=bool(config.get("verify_tls", False)), proxies=ctx.proxies)
+                    verify=bool(config.get("verify_tls", False)), proxies=ctx.proxies,
+                    extra_ports=parse_ports(config.get("extra_ports")))
         _apply_enrich(target, enrich(target.host))
         ctx.finding(target, path="/", status_code=res["status_code"],
                     content_length=res["content_length"], redirect=res["redirect"],
@@ -168,18 +286,31 @@ class AliveModule(Module):
         verify = bool(config.get("verify_tls", False))
         proxies = ctx.proxies
         threads = int(config.get("threads", 30) or 30)
-        jobs = [(t.id, t.base_url, t.host) for t in targets]
+        ports = parse_ports(config.get("extra_ports"))
+        # Loaded once, on this thread: worker threads must not touch the ORM.
+        signatures = load_signatures()
+        jobs = [(t.id, t.base_url, t.host, t.port) for t in targets]
         by_id = {t.id: t for t in targets}
         total = len(jobs)
         ctx.set_progress(0, total)
+        if ports:
+            ctx.log(f"Also checking port(s) {', '.join(str(p) for p in ports)} on each host")
+        if signatures:
+            ctx.log(f"Using {len(signatures)} custom fingerprint signature(s)")
 
-        def work(url, host):
-            return _do_probe(url, timeout, verify, proxies), enrich(host)
+        def work(url, host, own_port):
+            res = _do_probe(url, timeout, verify, proxies, signatures)
+            if ports:
+                res["extra"]["open_ports"] = _probe_ports(
+                    host, ports, timeout, verify, proxies,
+                    skip=(own_port,) if own_port else (), signatures=signatures)
+            return res, enrich(host)
 
         results = {}
         done = 0
         with ThreadPoolExecutor(max_workers=min(threads, max(1, total))) as ex:
-            futs = {ex.submit(work, url, host): tid for tid, url, host in jobs}
+            futs = {ex.submit(work, url, host, own_port): tid
+                    for tid, url, host, own_port in jobs}
             for fut in as_completed(futs):
                 results[futs[fut]] = fut.result()
                 done += 1
@@ -193,6 +324,9 @@ class AliveModule(Module):
             ctx.finding(t, path="/", status_code=res["status_code"],
                         content_length=res["content_length"], redirect=res["redirect"],
                         **res["extra"])
+            for p in (res["extra"].get("open_ports") or []):
+                ctx.log(f"{p['status_code']} - open port {p['port']} on {t.host} "
+                        f"({p['url']}{' — ' + p['title'] if p['title'] else ''})")
         ctx.set_progress(total, total)
 
 
