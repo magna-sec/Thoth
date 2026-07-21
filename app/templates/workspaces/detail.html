@@ -16,6 +16,7 @@
   <button class="tab" data-tab="shots">Screenshots</button>
   <button class="tab" data-tab="fuzz">Directory Fuzzing</button>
   <button class="tab" data-tab="runs">Tasks</button>
+  <button class="tab" data-tab="artifacts">Artifacts{% if artifacts %} <span class="muted">{{ artifacts|length }}</span>{% endif %}</button>
   {% if current_user.is_admin %}<button class="tab danger-tab" data-tab="danger">Wipe</button>{% endif %}
 </div>
 
@@ -258,10 +259,10 @@
     <h2>Import nuclei results</h2>
     <p class="muted" style="font-size:12px">
       Run <span class="mono">nuclei -jsonl</span> (or <span class="mono">-json</span>) out
-      of band and paste or upload it here. Each finding is matched to its subdomain by host.
-      Tick specific subdomains below to restrict the import to them; leave all unticked to
-      match across the whole workspace. Findings for hosts that aren't subdomains here are
-      reported, not invented.
+      of band and paste or upload it here (several files at once is fine). Each finding is
+      matched to its subdomain by host; findings for hosts that aren't subdomains here are
+      reported, not invented. Imported findings show as a severity-ranked
+      <strong>Vulnerabilities</strong> panel on the subdomain page.
     </p>
     <form id="nuclei-form" method="post" enctype="multipart/form-data"
           action="{{ url_for('workspaces.import_nuclei', workspace_id=ws.id) }}">
@@ -270,7 +271,6 @@
                 placeholder='{"template-id":"...","info":{"name":"...","severity":"high"},"host":"https://api.example.com","matched-at":"https://api.example.com/x"}'></textarea>
       <div class="note-form" style="margin-top:8px">
         <input type="file" name="file" multiple>
-        <span class="muted" id="nuclei-scope" style="font-size:12px">matching across all subdomains</span>
         <button class="btn primary" type="submit">Import nuclei</button>
       </div>
     </form>
@@ -307,6 +307,15 @@
       </select>
       <button class="btn small" type="button" id="df-reset" title="Filters are remembered across refreshes — this clears them">Reset filters</button>
       {{ exporter('hosts', 'Export inventory', 'Subdomain inventory with IP/ASN, WAF, tech and scope') }}
+      {% if iis_ids %}
+      <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+        <input type="hidden" name="module" value="iistilde">
+        {% for tid in iis_ids %}<input type="hidden" name="target_ids" value="{{ tid }}">{% endfor %}
+        <button class="btn" type="submit" title="Enumerate IIS 8.3 short names across the {{ iis_ids|length }} host(s) fingerprinted as IIS">Scan {{ iis_ids|length }} IIS host(s) for tilde ▶</button>
+      </form>
+      {% endif %}
       <form method="post" action="{{ url_for('workspaces.check_all', workspace_id=ws.id) }}" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn primary" type="submit" title="Runs the alive module across all subdomains (recorded + feeds Analysis)">Check all live ▶</button>
@@ -314,36 +323,15 @@
     </div>
   </div>
 
-  {# Bulk selection: cards carry a .dc-check box; these actions gather the checked ids and
-     POST to runs.start (or scope the nuclei import). Driven in JS so we avoid nesting the
-     grid inside a form alongside the per-card "Check live" / "Check all" forms. #}
-  <div class="bulk-bar" id="bulk-bar" data-run-url="{{ url_for('runs.start') }}" data-ws="{{ ws.id }}">
-    <label class="ctl"><input type="checkbox" id="bulk-all-visible"> Select shown</label>
-    <button class="btn small" type="button" id="bulk-alive-sel">Select alive</button>
-    <button class="btn small" type="button" id="bulk-iis-sel" title="Select hosts fingerprinted as IIS">Select IIS</button>
-    <button class="btn small" type="button" id="bulk-clear">Clear</button>
-    <span class="muted" id="bulk-count">0 selected</span>
-    <span class="bulk-actions" hidden id="bulk-actions">
-      <span class="muted">→ run on selected:</span>
-      <button class="btn small" type="button" data-bulk-module="alive">Alive</button>
-      <button class="btn small" type="button" data-bulk-module="screenshot" data-bulk-force="1">Screenshot</button>
-      <button class="btn small" type="button" data-bulk-module="iistilde" title="IIS 8.3 short-name enumeration check">IIS tilde</button>
-      <button class="btn small" type="button" data-bulk-module="dirsearch">Fuzz</button>
-      <button class="btn small" type="button" id="bulk-nuclei">Nuclei import ↑</button>
-    </span>
-  </div>
-
   <div class="domain-grid">
     {% for t in domains %}
     <div class="domain-card status-{{ 'na' if t.last_alive is none else ('up' if t.last_alive else 'down') }}"
          data-tid="{{ t.id }}" data-host="{{ t.host }}"
-         data-iis="{{ '1' if (('iis' in (t.last_server or '').lower()) or ('iis' in (t.last_tech or '').lower())) else '0' }}"
          data-live="{{ 'na' if t.last_alive is none else ('up' if t.last_alive else 'down') }}"
          data-code="{{ t.last_status_code if t.last_status_code is not none else '' }}"
          data-ports="{{ t.open_port_list | join(',') }}"
          data-scope="{{ '0' if t.host in scope_out else '1' }}">
       <div class="dc-head">
-        <input type="checkbox" class="dc-check" value="{{ t.id }}" title="Select for a bulk action">
         <a class="dc-host sensitive mono" href="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">{{ t.host }}</a>
         {% if t.last_alive is none %}
           <span class="dc-status badge unchecked">unchecked</span>
@@ -607,6 +595,110 @@
   </div>
 </section>
 
+<!-- ARTIFACTS (dsregcmd / PAC) -->
+<section class="tabpane" data-pane="artifacts" id="artifacts">
+  <div class="card">
+    <h2>Recon artifacts <span class="muted">— dsregcmd status &amp; PAC files</span></h2>
+    <p class="muted" style="font-size:12px">
+      Paste <span class="mono">dsregcmd /status</span> output (Windows device / Entra ID
+      join state) or a <span class="mono">.pac</span> proxy-auto-config file. Thoth parses
+      it into a readable view — for a PAC, the proxies and the internal estate that bypasses
+      them (DIRECT); for dsregcmd, the join/tenant/SSO state. Nothing is executed.
+    </p>
+    <form method="post" enctype="multipart/form-data"
+          action="{{ url_for('workspaces.add_artifact', workspace_id=ws.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="content" rows="6" class="mono" style="width:100%"
+                placeholder="Paste dsregcmd /status output, or the contents of a proxy.pac…"></textarea>
+      <div class="note-form" style="margin-top:8px">
+        <select name="kind">
+          <option value="auto">Auto-detect</option>
+          <option value="dsregcmd">dsregcmd status</option>
+          <option value="pac">PAC file</option>
+        </select>
+        <input name="name" placeholder="label (optional)" style="width:160px">
+        <input type="file" name="file">
+        <button class="btn primary" type="submit">Parse &amp; save</button>
+      </div>
+    </form>
+  </div>
+
+  {% for a in artifacts %}
+  <div class="card">
+    <div class="table-toolbar">
+      <h2>
+        {% if a.kind == "dsregcmd" %}Device / Entra ID state{% else %}PAC file{% endif %}
+        {% if a.name %}<span class="muted sensitive">— {{ a.name }}</span>{% endif %}
+        <span class="muted" style="font-size:12px">· {{ a.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+      </h2>
+      <form method="post" action="{{ url_for('workspaces.delete_artifact', workspace_id=ws.id, artifact_id=a.id) }}" style="margin:0"
+            onsubmit="return confirm('Remove this artifact?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn small danger-btn" type="submit">Remove</button>
+      </form>
+    </div>
+
+    {% if a.kind == "dsregcmd" %}
+      {% set d = a.data_json %}
+      {% if d.summary %}
+      <div class="fp-row" style="margin-bottom:10px">
+        {% for s in d.summary %}
+        <span class="chip {{ 'tech' if (s.bool is sameas true and s.key in ('AzureAdJoined','DomainJoined','EnterpriseJoined','WorkplaceJoined','AzureAdPrt')) else '' }}"
+              title="{{ s.key }}">
+          {{ s.key }}:
+          {% if s.bool is sameas true %}YES{% elif s.bool is sameas false %}NO{% else %}<span class="sensitive">{{ s.value or '—' }}</span>{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="grid-2">
+      {% for sec in d.sections %}
+        <div>
+          <h3 style="margin:8px 0 4px">{{ sec.title }}</h3>
+          <table class="data"><tbody>
+            {% for it in sec['items'] %}
+            <tr><td class="muted" style="white-space:nowrap">{{ it.key }}</td>
+                <td class="mono sensitive" style="word-break:break-all">{{ it.value or '—' }}</td></tr>
+            {% endfor %}
+          </tbody></table>
+          {% if sec.notes %}<p class="muted mono" style="font-size:11px">{{ sec.notes | join(' · ') }}</p>{% endif %}
+        </div>
+      {% endfor %}
+      </div>
+    {% else %}
+      {% set d = a.data_json %}
+      <div class="grid-2">
+        <div>
+          <h3 style="margin:8px 0 4px">Proxies <span class="muted">({{ d.proxies|length }})</span></h3>
+          {% if d.proxies %}
+            <div class="fp-row">{% for p in d.proxies %}<span class="chip sensitive mono">{{ p }}</span>{% endfor %}</div>
+          {% else %}<p class="muted">None found.</p>{% endif %}
+          <h3 style="margin:14px 0 4px">Bypasses proxy — DIRECT <span class="muted">({{ d.direct_patterns|length }})</span></h3>
+          <p class="muted" style="font-size:12px; margin-top:-2px">The internal estate that connects directly — recon gold.</p>
+          {% if d.direct_patterns %}
+            <div class="fp-row">{% for p in d.direct_patterns %}<span class="chip tech mono sensitive">{{ p }}</span>{% endfor %}</div>
+          {% else %}<p class="muted">None detected.</p>{% endif %}
+        </div>
+        <div>
+          <h3 style="margin:8px 0 4px">Subnets <span class="muted">({{ d.subnets|length }})</span></h3>
+          {% if d.subnets %}<div class="fp-row">{% for s in d.subnets %}<span class="chip mono sensitive">{{ s }}</span>{% endfor %}</div>{% else %}<p class="muted">None.</p>{% endif %}
+          <h3 style="margin:14px 0 4px">All host / domain patterns <span class="muted">({{ d.domains|length }})</span></h3>
+          {% if d.domains %}<div class="fp-row">{% for x in d.domains %}<span class="chip mono sensitive">{{ x }}</span>{% endfor %}</div>{% else %}<p class="muted">None.</p>{% endif %}
+          <p class="muted" style="font-size:12px; margin-top:10px">
+            {{ d.proxy_returns }} PROXY vs {{ d.direct_returns }} DIRECT return(s) ·
+            helpers: {{ d.helpers | join(', ') or '—' }}
+          </p>
+        </div>
+      </div>
+    {% endif %}
+    <details style="margin-top:8px"><summary class="muted" style="font-size:12px; cursor:pointer">Raw</summary>
+      <pre class="console" style="max-height:280px">{{ a.raw }}</pre></details>
+  </div>
+  {% else %}
+  <div class="card"><p class="muted">No artifacts yet. Paste a dsregcmd status or a PAC file above.</p></div>
+  {% endfor %}
+</section>
+
 <!-- DANGER / WIPE (admin only) -->
 {% if current_user.is_admin %}
 <section class="tabpane" data-pane="danger">
@@ -652,7 +744,6 @@
 <script src="{{ url_for('static', filename='js/results.js') }}"></script>
 <script src="{{ url_for('static', filename='js/fuzz.js') }}"></script>
 <script src="{{ url_for('static', filename='js/shots.js') }}"></script>
-<script src="{{ url_for('static', filename='js/bulk.js') }}"></script>
 <script src="{{ url_for('static', filename='js/response.js') }}"></script>
 <script src="{{ url_for('static', filename='js/activity.js') }}"></script>
 {% endblock %}

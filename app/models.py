@@ -46,6 +46,8 @@ class Workspace(db.Model):
                            cascade="all, delete-orphan")
     findings = db.relationship("Finding", back_populates="workspace",
                                cascade="all, delete-orphan")
+    artifacts = db.relationship("Artifact", back_populates="workspace",
+                                cascade="all, delete-orphan")
 
 
 class WorkspaceMember(db.Model):
@@ -221,6 +223,26 @@ class Note(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     target = db.relationship("Target", back_populates="notes")
+
+
+class Artifact(db.Model):
+    """A parsed recon artifact pasted into a workspace (dsregcmd output, a PAC file).
+
+    Stored so the parse persists for the team and is removed on wipe; ``data_json`` holds
+    the structured result the templates render, ``raw`` the original for reference.
+    """
+    __tablename__ = "artifacts"
+    id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    kind = db.Column(db.String(20), nullable=False)  # dsregcmd | pac
+    name = db.Column(db.String(200))                 # optional label / source filename
+    raw = db.Column(db.Text)
+    data_json = db.Column(db.JSON, default=dict)
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    workspace = db.relationship("Workspace", back_populates="artifacts")
 
 
 class TestedName(db.Model):

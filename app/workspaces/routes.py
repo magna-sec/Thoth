@@ -20,9 +20,11 @@ from sqlalchemy import func
 from ..auth import admin_required
 from .. import exports
 from ..extensions import db
+from ..dsregcmd import looks_like_dsregcmd, parse_dsregcmd
 from ..importers import ImportError_, ledger_key, parse_dirsearch
 from ..nucleiparse import NucleiParseError, parse_nuclei
-from ..models import (Finding, Note, Run, Target, TestedPath, User, Workspace,
+from ..pacparse import looks_like_pac, parse_pac
+from ..models import (Artifact, Finding, Note, Run, Target, TestedPath, User, Workspace,
                       WorkspaceMember)
 from ..modules import all_modules, get_module
 from ..modules.alive import probe
@@ -84,6 +86,8 @@ def detail(workspace_id):
     domains = sorted(ws.targets, key=lambda t: t.host)
     sc = scope_for(ws)
     scope_out = {t.host for t in domains if not sc.allows(t.host)}
+    iis_ids = [t.id for t in domains
+               if "iis" in ((t.last_server or "") + " " + (t.last_tech or "")).lower()]
     mod_runs = _module_runs(ws.id)
     status_dist = _status_distribution(ws.id)
     analysis = _analysis(ws.id)
@@ -105,7 +109,9 @@ def detail(workspace_id):
                            dicc_count=_default_wordlist_count(), run_counts=run_counts,
                            run_scope=run_scope, user_by_id=user_by_id, fuzz_cov=fuzz_cov,
                            analysis=analysis, shots=_screenshots(ws.id),
-                           scope_out=scope_out,
+                           scope_out=scope_out, iis_ids=iis_ids,
+                           artifacts=Artifact.query.filter_by(workspace_id=ws.id)
+                           .order_by(Artifact.created_at.desc()).all(),
                            guessed_domain=(_domains(None, {t.host for t in domains})
                                            or [""])[0])
 
@@ -571,6 +577,8 @@ def domain_detail(workspace_id, target_id):
                 "path": f.path, "template_id": ex.get("template_id"),
                 "matched_at": ex.get("matched_at"), "tags": ex.get("tags") or [],
                 "module": ex["module"], "found_at": f.found_at,
+                "shortnames": ex.get("shortnames") or [],
+                "truncated": ex.get("truncated"),
                 "description": ex.get("description")})
     vulns.sort(key=lambda v: (sev_rank.get(v["severity"], 9), v["name"]))
 
@@ -696,6 +704,65 @@ def import_dirsearch(workspace_id, target_id):
                 f"not {t.host}.")
     flash(msg, "error" if foreign else "info")
     return redirect(url_for("workspaces.run_detail", workspace_id=ws.id, run_id=run.id))
+
+
+@ws_bp.route("/<int:workspace_id>/artifacts", methods=["POST"])
+@login_required
+def add_artifact(workspace_id):
+    """Parse a pasted/uploaded recon artifact (dsregcmd output or a PAC file) and store it.
+
+    The kind is taken from the form, or auto-detected when set to 'auto'.
+    """
+    ws = _get_member_workspace(workspace_id)
+    raw = request.form.get("content", "")
+    upload = request.files.get("file")
+    name = request.form.get("name", "").strip() or None
+    if upload and upload.filename:
+        raw = (raw + "\n" + upload.read().decode("utf-8", errors="ignore")).strip()
+        name = name or upload.filename
+    if not raw.strip():
+        flash("Paste some content or choose a file first.", "error")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+
+    kind = request.form.get("kind", "auto")
+    if kind == "auto":
+        kind = ("dsregcmd" if looks_like_dsregcmd(raw)
+                else "pac" if looks_like_pac(raw) else "")
+
+    try:
+        if kind == "dsregcmd":
+            data = parse_dsregcmd(raw)
+            if not data["sections"]:
+                raise ValueError("No dsregcmd sections found in that text.")
+        elif kind == "pac":
+            data = parse_pac(raw)
+        else:
+            raise ValueError("Couldn't tell whether that's dsregcmd output or a PAC file — "
+                             "pick the type explicitly.")
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+
+    art = Artifact(workspace_id=ws.id, kind=kind, name=name, raw=raw[:200_000],
+                   data_json=data, created_by=current_user.id)
+    db.session.add(art)
+    db.session.commit()
+    label = "dsregcmd status" if kind == "dsregcmd" else "PAC file"
+    flash(f"Parsed and saved {label}" + (f" · {name}" if name else ""), "info")
+    return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+
+
+@ws_bp.route("/<int:workspace_id>/artifacts/<int:artifact_id>/delete", methods=["POST"])
+@login_required
+def delete_artifact(workspace_id, artifact_id):
+    ws = _get_member_workspace(workspace_id)
+    art = db.session.get(Artifact, artifact_id)
+    if art is None or art.workspace_id != ws.id:
+        abort(404)
+    db.session.delete(art)
+    db.session.commit()
+    flash("Artifact removed.", "info")
+    return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
 
 
 @ws_bp.route("/<int:workspace_id>/import-nuclei", methods=["POST"])

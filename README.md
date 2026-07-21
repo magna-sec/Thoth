@@ -33,8 +33,11 @@ re-fuzzed twice — no duplicated work between runs or teammates.
 - **Import nuclei results** — paste/upload nuclei JSONL or JSON; each finding is matched to
   its subdomain by host and surfaced as a severity-ranked **Vulnerabilities** panel. See
   [Nuclei](#nuclei-and-bulk-actions).
-- **IIS tilde check** — a one-click 8.3 short-name (tilde) enumeration check for IIS hosts.
-  See [IIS tilde](#iis-tilde-check).
+- **IIS tilde enumeration** — recover 8.3 short names from exposed IIS hosts.
+  See [IIS tilde](#iis-tilde-enumeration).
+- **Recon artifacts** — paste `dsregcmd /status` output or a PAC file; Thoth parses each
+  into a readable view (join/tenant state; proxies + the internal estate that bypasses
+  them). See [Artifacts](#recon-artifacts).
 - **Results** — rich filters (status, exclude-status/size, WAF, hide dead/3xx) that **stick
   across refreshes**, clickable paths, and a full **response viewer** (through your proxy).
 - **Analysis** — ASN ownership, WAF vendors, tech, servers, and countries across the estate.
@@ -117,32 +120,50 @@ Four datasets × four formats, from the Results tab (whole workspace) or a subdo
 CSV/JSON/Markdown for humans and spreadsheets, TXT (tab-separated, or plain lines for
 `urls`/`params`) for pipes.
 
-## Nuclei and bulk actions
+## Nuclei import
 
-Every subdomain card has a **checkbox**, and the Subdomains tab has a bulk bar: select
-shown / alive / IIS / clear, then run **Alive**, **Screenshot**, **IIS tilde**, or **Fuzz**
-across the selection in one go.
+**Import nuclei results** (Subdomains tab) takes the output of a nuclei run — `nuclei
+-jsonl` or `nuclei -json` — pasted or uploaded (several files at once is fine). Each finding
+is matched to its subdomain **by host**; findings for hosts that aren't subdomains in the
+workspace are reported, not invented. Imported findings carry their **severity** and show up
+as a ranked **Vulnerabilities** panel on the subdomain page (critical → info). Both nuclei
+field spellings (`template-id` / `templateID`, `matched-at` / `matched_at`) are understood.
 
-**Import nuclei results** takes the output of a nuclei run — `nuclei -jsonl` or
-`nuclei -json` — pasted or uploaded (several files at once is fine). Each finding is matched
-to its subdomain **by host**; findings for hosts that aren't subdomains in the workspace are
-reported, not invented. Tick specific subdomains first to scope the import to them. Imported
-findings carry their **severity** and show up as a ranked **Vulnerabilities** panel on the
-subdomain page (critical → info). Both nuclei field spellings (`template-id` /
-`templateID`, `matched-at` / `matched_at`) are understood.
+## IIS tilde enumeration
 
-## IIS tilde check
+For IIS hosts, **IIS tilde ▶** (subdomain page) or **Scan N IIS host(s) for tilde ▶**
+(Subdomains tab, appears when any host is fingerprinted as IIS) recovers **8.3 short names**
+via the classic tilde (`~`) disclosure — inspired by PortSwigger's
+[iis-tilde-enumeration-scanner](https://github.com/portswigger/iis-tilde-enumeration-scanner).
+Two phases:
 
-For hosts fingerprinted as IIS, **IIS tilde ▶** runs a read-only check for **8.3 short-name
-(tilde) enumeration** — the classic disclosure where old/misconfigured IIS answers
-differently for a wildcard short-name that matches an existing file than for one that can't.
-It's a *detection*, not an enumerator: it sends a matching wildcard (`/*~1*/…`) and an
-improbable control, and reports the host exposed only when their HTTP statuses differ in the
-tell-tale way (classically 404 vs 400). A patched server, or one that simply rejects the
-characters, answers both identically and isn't flagged. Non-IIS hosts are skipped unless you
-force it (from the subdomain page's **More** menu, or by un-ticking *Only test IIS hosts*).
-Runs against hosts already in the workspace, governed by the [engagement scope](#scope) like
-every other module. **For authorized testing only.**
+1. **Detect** — a wildcard that should match if any short name exists (`/*~1*/…`) vs an
+   improbable control; exposed only when their HTTP statuses differ in the tell-tale way
+   (classically 404 match / 400 miss). A patched server answers both identically.
+2. **Enumerate** — extend a prefix a character at a time (`/A*~1*/…` → `/AD*~1*/…`),
+   keeping matching branches up to the 6-char stem, then the 3-char extension, probing
+   `~2…~9` for collisions. Recovered names (`ADMIN~1.ASP`) show under the Vulnerabilities
+   panel.
+
+Read-only and bounded by a per-host request budget; skips non-IIS hosts unless forced;
+stoppable mid-run (findings so far are kept); governed by the [engagement scope](#scope).
+**For authorized testing only.**
+
+## Recon artifacts
+
+The **Artifacts** tab parses two Windows/network recon outputs into a tidy view — nothing is
+executed, it's pure text parsing:
+
+- **`dsregcmd /status`** — a device's Entra ID (Azure AD) / domain join state. The boxed
+  sections become tables, with a summary strip up top (AzureAdJoined, DomainJoined, tenant
+  name/id, MDM URL, PRT status).
+- **PAC files** (`FindProxyForURL`) — the proxy servers, and more usefully the internal
+  hostnames, domains and subnets routed **DIRECT** (the estate that bypasses the proxy —
+  recon gold), plus every host/domain pattern and helper used. The condition→action pairing
+  is a static best-effort read of typical PAC structure, not a JS interpreter.
+
+Paste or upload; the type is auto-detected (or pick it). Saved per workspace and wiped with
+it.
 
 ## Fingerprints
 
@@ -216,7 +237,8 @@ scope is requested), DNS discovery (wildcard suppression, permutations, dedup, s
 a fake resolver, exports (all datasets and formats), custom fingerprint signatures,
 default-page detection, screenshots (capture bookkeeping, skip rules, image serving —
 against a stub renderer, so no browser needed), dirsearch import parsing, nuclei parsing +
-host-matched import, the IIS tilde differential (against a fake IIS server), task
+host-matched import, IIS 8.3 short-name enumeration (against a faithful fake
+IIS server — detection, name recovery, collisions, budget), dsregcmd + PAC parsing, task
 stopping/cancellation, URL/tree analysis, ASN parsing, and routes (import, wipe-cascade,
 access control, filters).
 

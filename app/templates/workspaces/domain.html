@@ -113,6 +113,14 @@
           <td class="sensitive">{{ v.name }}
             {% if v.template_id %}<span class="muted mono" style="font-size:11px">{{ v.template_id }}</span>{% endif %}
             {% for tag in v.tags[:5] %}<span class="chip" style="font-size:10px">{{ tag }}</span>{% endfor %}
+            {% if v.shortnames %}
+            <details style="margin-top:4px">
+              <summary class="muted" style="font-size:12px; cursor:pointer">{{ v.shortnames|length }} recovered short name(s){{ ' (partial — budget hit)' if v.truncated }}</summary>
+              <div class="fp-row" style="margin-top:4px">
+                {% for sn in v.shortnames %}<span class="chip mono sensitive" style="font-size:11px">{{ sn }}</span>{% endfor %}
+              </div>
+            </details>
+            {% endif %}
           </td>
           <td class="mono sensitive">{% if v.matched_at %}<a href="{{ v.matched_at }}" target="_blank" rel="noopener">{{ v.path }}</a>{% else %}{{ v.path }}{% endif %}</td>
           <td class="muted">{{ v.module.replace("-import", "") }}</td>
