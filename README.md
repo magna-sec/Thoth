@@ -18,7 +18,8 @@ re-fuzzed twice — no duplicated work between runs or teammates.
 > For authorized security testing only. Only scan hosts you have permission to test.
 > Thoth only touches a target during an **explicit** run (alive, dnsbrute, dirsearch,
 > screenshot, iistilde) or a manual **Check live** — browsing the UI, viewing a subdomain,
-> and every parser (PAC, dsregcmd, nmap, nessus, nuclei) make **no** outbound requests.
+> and every parser (PAC, dsregcmd, nmap, nessus, Conditional Access, nuclei) make **no**
+> outbound requests.
 
 ## Features
 
@@ -173,7 +174,7 @@ adding one is a one-file change and it appears throughout the UI. The **Plugins*
   `dirsearch`, `screenshot`, `iistilde`. Drop `app/modules/yours.py` with a `@register`
   class extending `Module`.
 - **Parsers** — ingest an artifact you already have and either render it (`pac`, `dsregcmd`,
-  `nmap`, `nessus`) or fold it onto the workspace's subdomains (`nuclei`, a `kind = "findings"` parser
+  `nmap`, `nessus`, `roadrecon-cap`) or fold it onto the workspace's subdomains (`nuclei`, a `kind = "findings"` parser
   that writes each finding to the matching host's Vulnerabilities panel). Drop
   `app/plugins/yours_plugin.py` with a `@register_parser` class extending `ParserPlugin`
   (a `detect()`, a `parse()`, and either a render partial under `templates/plugins/` or an
@@ -201,14 +202,22 @@ nothing is executed, it's pure text parsing:
   boxed sections as tables.
 - **PAC files** (`FindProxyForURL`) — the reconstructed **rules** (condition → PROXY/DIRECT, in
   order), the proxy servers, and the internal hostnames/domains/subnets routed **DIRECT** (the
-  estate that bypasses the proxy — recon gold). Plus a **Misconfigurations** panel:
-  credentials-in-proxy, public-IP proxy, DNS-leak helpers (`isInNet`/`dnsResolve` on the host),
-  overly-broad wildcards, risky defaults. Parsed statically — the rule pairing is a best-effort
-  read of typical PAC structure, not a JS interpreter.
+  estate that bypasses the proxy — recon gold). Plus a **Misconfigurations** panel that flags:
+  credentials in a proxy string, a proxy on a public IP, DNS-leak helpers (`isInNet`/`dnsResolve`
+  on the host), `0.0.0.0/0` or public ranges routed DIRECT, **proxy-failure fallback to DIRECT**
+  (`"PROXY x; DIRECT"` bypasses egress control if the proxy is down), `myIpAddress()`-based
+  routing, SOCKS4, secrets in the file, risky defaults, and internal-estate disclosure (PAC/WPAD
+  is often served unauthenticated). Parsed statically — the rule pairing is a best-effort read of
+  typical PAC structure, not a JS interpreter.
 - **nmap** (`-oX` XML, `-oG` greppable, or the normal report) — live hosts, open ports, services
   and versions, with notable services (SMB, LDAP, Kerberos, RDP, databases…) highlighted.
 - **Nessus** (`.nessus` export) — scanned hosts and their vulnerabilities ranked by severity
   (critical → info), with CVSS, CVEs, a filterable critical/high table, and per-host detail.
+- **Conditional Access** (ROADrecon dump or a Graph export) — every Entra ID CA policy shown
+  clearly (state, who/what/conditions/grant), plus a **Coverage gaps** panel that flags the
+  classic holes CA reviews look for: legacy auth not blocked, MFA not required for all users,
+  admins unprotected, exclusion "backdoors", MFA scoped to browsers only, and
+  trusted-location IP bypasses.
 
 Paste or upload; the type is auto-detected (or pick it). Saved per workspace and wiped with
 it. Large lists (e.g. a PAC's hundreds of DIRECT hosts) render as bounded, filterable

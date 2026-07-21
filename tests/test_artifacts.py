@@ -117,6 +117,32 @@ def test_pac_flags_common_misconfigs():
     assert "Wildcard rule matches everything" in titles     # shExpMatch(host,"*")
 
 
+def test_pac_flags_advanced_misconfigs():
+    bad = """function FindProxyForURL(url, host) {
+        if (isInNet(host, "0.0.0.0", "0.0.0.0")) return "DIRECT";
+        if (isInNet(host, "8.8.0.0", "255.255.0.0")) return "DIRECT";
+        if (shExpMatch(host, "*.x.com")) return "SOCKS4 s:1080";
+        if (myIpAddress() == "10.0.0.1") return "DIRECT";
+        var creds = "password=hunter2";
+        return "PROXY proxy.corp:8080; DIRECT";
+    }"""
+    titles = {f["title"] for f in parse_pac(bad)["findings"]}
+    assert "Everything routed DIRECT" in titles              # 0.0.0.0/0 -> DIRECT
+    assert "Public range routed DIRECT" in titles            # 8.8.0.0/16 (public) -> DIRECT
+    assert "Proxy failure falls back to DIRECT" in titles    # "PROXY …; DIRECT"
+    assert "SOCKS4 proxy" in titles
+    assert "Routing depends on myIpAddress()" in titles
+    assert "Possible secret in the PAC" in titles
+
+
+def test_pac_internal_estate_disclosure_noted():
+    many = ("function FindProxyForURL(url, host){\n"
+            + "\n".join(f'if(dnsDomainIs(host,"h{i}.corp.local"))return "DIRECT";'
+                        for i in range(6))
+            + '\nreturn "PROXY p:8080";}')
+    assert "Internal estate disclosed" in {f["title"] for f in parse_pac(many)["findings"]}
+
+
 def test_pac_clean_file_has_few_findings():
     clean = """function FindProxyForURL(url, host) {
         if (isPlainHostName(host) || dnsDomainIs(host, "corp.local")) return "DIRECT";

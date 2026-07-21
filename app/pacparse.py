@@ -99,6 +99,15 @@ def _is_public_ip(host):
         return False
 
 
+def _is_global(host):
+    """True for genuinely public (globally-routable) addresses — excludes private, loopback,
+    link-local, and 0.0.0.0/8, so we don't flag internal ranges as 'public'."""
+    try:
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        return False
+
+
 def _findings(text, rules, proxies):
     """Common PAC misconfigurations, most severe first."""
     out = []
@@ -141,7 +150,39 @@ def _findings(text, rules, proxies):
                     f"rules below it.")
                 break
 
-    # 5. Default action (the last, unconditional return).
+    # 5. Proxy-failure fallback to DIRECT: `return "PROXY x:8080; DIRECT"` connects
+    #    straight to the target if the proxy is down — bypassing egress filtering / DLP.
+    for lit in re.findall(r'return\s+["\']([^"\']+)["\']', text):
+        if _PROXY_TOKEN.search(lit) and re.search(r'\bDIRECT\b', lit, re.I):
+            add("medium", "Proxy failure falls back to DIRECT",
+                f"'{lit.strip()}' — if the proxy is unreachable the client connects DIRECT, "
+                f"bypassing egress filtering, logging and DLP.")
+            break
+
+    # 6. Overly broad DIRECT ranges: everything, or public address space, sent direct.
+    for r in rules:
+        if r["action"] != "DIRECT":
+            continue
+        for helper, pat in r["conditions"]:
+            if helper != "isInNet":
+                continue
+            base = pat.split("/")[0].split()[0]
+            prefix = None
+            if "/" in pat:
+                try:
+                    prefix = int(pat.split("/")[1])
+                except ValueError:
+                    prefix = None
+            if prefix == 0 or base == "0.0.0.0":
+                add("high", "Everything routed DIRECT",
+                    f"An isInNet DIRECT rule matches {pat} — effectively all traffic bypasses "
+                    f"the proxy.")
+            elif _is_public_ip(base) and _is_global(base):
+                add("medium", "Public range routed DIRECT",
+                    f"{pat} is public address space sent DIRECT — those external hosts bypass "
+                    f"the proxy.")
+
+    # 7. Default action (the last, unconditional return).
     default = next((r for r in reversed(rules) if not r["conditions"]), None)
     if default:
         if default["action"] == "DIRECT":
@@ -153,17 +194,49 @@ def _findings(text, rules, proxies):
             "No unconditional fallback return — behaviour for unmatched hosts is undefined "
             "and browser-dependent.")
 
-    # 6. Nothing goes DIRECT — even internal/loopback is proxied.
-    if proxies and not any(r["action"] == "DIRECT" for r in rules):
+    # 8. SOCKS4: no authentication and (SOCKS4, not 4a) client-side DNS resolution.
+    if any(p.upper().startswith(("SOCKS4", "SOCKS ")) for p in proxies):
+        add("low", "SOCKS4 proxy",
+            "SOCKS4 has no authentication and resolves DNS client-side — prefer SOCKS5.")
+
+    # 9. Routing that depends on myIpAddress() — unreliable on multi-homed / VPN hosts.
+    if re.search(r'\bmyipaddress\s*\(', lower):
+        add("low", "Routing depends on myIpAddress()",
+            "myIpAddress() returns one interface's address and is unreliable on VPN / "
+            "multi-homed hosts, so the routing decision can silently break.")
+
+    # 10. A password / API key / secret assigned in the file — anyone who can fetch the
+    #     PAC (often unauthenticated WPAD) can read it.
+    if re.search(r'(?i)\b(pass(?:word|wd)?|api[_-]?key|secret)\b\s*[:=]\s*["\']?\S', text):
+        add("medium", "Possible secret in the PAC",
+            "A password / API-key / secret-like value appears in the file — PAC/WPAD files "
+            "are frequently served unauthenticated.")
+
+    # 11. No proxy at all — this PAC enforces no egress control.
+    if not proxies:
+        add("low", "No proxy is ever used",
+            "Every request is sent DIRECT — this PAC provides no proxy / egress control.")
+    # ...or everything is proxied, even internal/loopback.
+    elif not any(r["action"] == "DIRECT" for r in rules):
         add("info", "No DIRECT rules",
             "Every request (including internal and loopback) is sent through the proxy.")
 
-    # 7. Loopback / plain hostnames not excluded.
+    # 12. Loopback / plain hostnames not excluded.
     if proxies and "isplainhostname" not in lower and "127.0.0.1" not in text \
             and "localhost" not in lower:
         add("info", "Loopback not excluded",
             "No isPlainHostName / localhost rule — intranet short-names and loopback may be "
             "sent through the proxy.")
+
+    # 13. The PAC itself discloses the internal estate. PAC/WPAD is commonly served
+    #     unauthenticated, so anyone who can fetch it maps internal hosts and subnets.
+    patterns = {pat for r in rules for helper, pat in r["conditions"]
+                if helper != "isPlainHostName"}
+    if proxies and len(patterns) >= 5:
+        add("info", "Internal estate disclosed",
+            f"This PAC references {len(patterns)} internal host / subnet pattern(s). PAC / "
+            f"WPAD files are often served without authentication, so anyone who can fetch it "
+            f"maps your internal network.")
 
     order = {"high": 0, "medium": 1, "low": 2, "info": 3}
     out.sort(key=lambda f: order.get(f["severity"], 9))

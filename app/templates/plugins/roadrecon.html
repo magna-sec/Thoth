@@ -1,0 +1,58 @@
+{# Renders parsed Conditional Access policies. Context: `art`, `d` (art.data_json). #}
+<div class="headline-banner">
+  <span class="headline-icon">🛂</span>
+  <div>
+    <div class="headline-main">
+      {{ d.summary.total }} policy(ies) · {{ d.summary.enabled }} enabled ·
+      {{ d.summary.report_only }} report-only · {{ d.summary.disabled }} disabled
+    </div>
+    <div class="muted" style="font-size:12px">Entra ID Conditional Access — parsed statically</div>
+  </div>
+</div>
+
+{% if d.findings %}
+<div class="card">
+  <h2>Coverage gaps <span class="muted">({{ d.findings|length }})</span></h2>
+  <ul class="notable-list">
+    {% for f in d.findings %}
+    <li><span class="chip sev-{{ f.severity }}">{{ f.severity }}</span>
+      <strong>{{ f.title }}</strong> <span class="muted">— {{ f.detail }}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Policies <span class="muted">— enabled first</span></h2>
+  {% macro chips(items, cls='') %}
+    {% for x in items %}<span class="chip mono sensitive {{ cls }}" style="font-size:10px">{{ x }}</span>{% else %}<span class="muted">—</span>{% endfor %}
+  {% endmacro %}
+  {% for p in d.policies %}
+  <details {% if p.enabled and loop.first %}open{% endif %}
+           style="border-bottom:1px solid var(--border); padding:6px 0">
+    <summary style="cursor:pointer; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+      <span class="sensitive"><strong>{{ p.name }}</strong></span>
+      <span class="chip {{ 'sev-info' if p.enabled else 'sev-medium' }}">{{ p.state_label }}</span>
+      <span style="margin-left:auto" class="muted mono" style="font-size:11px">
+        grant: {{ p.grant_controls | join(' ' ~ p.grant_operator ~ ' ') or 'none' }}</span>
+    </summary>
+    <table class="kv" style="margin-top:6px"><tbody>
+      <tr><td class="k">Users — include</td><td class="v">{{ chips(p.users_include) }}</td></tr>
+      {% if p.groups_include %}<tr><td class="k">Groups — include</td><td class="v">{{ chips(p.groups_include) }}</td></tr>{% endif %}
+      {% if p.roles_include %}<tr><td class="k">Roles — include</td><td class="v">{{ chips(p.roles_include, 'tech') }}</td></tr>{% endif %}
+      {% if p.users_exclude or p.groups_exclude or p.roles_exclude %}
+      <tr><td class="k">Exclusions</td><td class="v">{{ chips(p.users_exclude + p.groups_exclude + p.roles_exclude, 'waf') }}</td></tr>{% endif %}
+      <tr><td class="k">Apps — include</td><td class="v">{{ chips(p.apps_include) }}</td></tr>
+      <tr><td class="k">Clients</td><td class="v">{{ chips(p.client_app_types | sort) }}</td></tr>
+      {% if p.platforms_include %}<tr><td class="k">Platforms</td><td class="v">{{ chips(p.platforms_include) }}</td></tr>{% endif %}
+      {% if p.locations_include or p.locations_exclude %}
+      <tr><td class="k">Locations</td><td class="v">
+        {{ chips(p.locations_include) }}{% if p.locations_exclude %} <span class="muted">excl</span> {{ chips(p.locations_exclude, 'waf') }}{% endif %}</td></tr>{% endif %}
+      {% if p.user_risk or p.signin_risk %}
+      <tr><td class="k">Risk</td><td class="v">{{ chips((p.user_risk + p.signin_risk)) }}</td></tr>{% endif %}
+      <tr><td class="k">Grant ({{ p.grant_operator }})</td><td class="v">{{ chips(p.grant_controls | sort, 'tech') }}</td></tr>
+      {% if p.session_controls %}<tr><td class="k">Session</td><td class="v">{{ chips(p.session_controls) }}</td></tr>{% endif %}
+    </tbody></table>
+  </details>
+  {% endfor %}
+</div>
