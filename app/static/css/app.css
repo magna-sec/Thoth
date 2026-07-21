@@ -159,6 +159,28 @@ a.dc-host:hover { color: var(--accent); }
 .fz-item input { width: auto; }
 .row-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
 
+/* Plugin picker (create form + workspace settings). */
+.plugin-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 12px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.pp-item { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; }
+.pp-item input { width: auto; flex: none; }
+
+/* Artifact rendering: headline banner, notable list, kv grid, pills. */
+.headline-banner { display: flex; gap: 14px; align-items: center; padding: 14px 18px; margin-bottom: 16px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; }
+.headline-icon { font-size: 30px; line-height: 1; }
+.headline-main { font-size: 20px; font-weight: 700; }
+.notable-list { list-style: none; margin: 0; padding: 0; }
+.notable-list li { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.notable-list li:last-child { border-bottom: none; }
+.notable-list .chip { margin-right: 6px; }
+.kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 18px; }
+.kv-cell { min-width: 0; }
+.kv-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+.kv-value { font-size: 14px; word-break: break-all; margin-top: 1px; }
+.pill { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.pill-yes { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.pill-no { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+.pill-direct { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
+
 /* Artifact key/value tables (dsregcmd sections). */
 .kv { width: 100%; border-collapse: collapse; }
 .kv td { padding: 3px 8px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 13px; }

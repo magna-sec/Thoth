@@ -168,25 +168,36 @@ adding one is a one-file change and it appears throughout the UI. The **Plugins*
   `dirsearch`, `screenshot`, `iistilde`. Drop `app/modules/yours.py` with a `@register`
   class extending `Module`.
 - **Parsers** — ingest an artifact you already have, parse it, and render it. `pac`,
-  `dsregcmd`. Drop `app/plugins/yours_plugin.py` with a `@register_parser` class extending
-  `ParserPlugin` (a `detect()`, a `parse()`, and a render partial under
+  `dsregcmd`, `nmap`. Drop `app/plugins/yours_plugin.py` with a `@register_parser` class
+  extending `ParserPlugin` (a `detect()`, a `parse()`, and a render partial under
   `templates/plugins/`).
 
 No registry edits, no route wiring — the framework discovers it. The upload picker,
 auto-detect, the catalogue, and per-artifact rendering all populate from the registry.
+
+**Plugins are enabled per workspace.** When you create a workspace you pick which plugins the
+engagement needs (all on by default); the owner/admin can change the selection later in the
+workspace **Settings**. Disabled plugins are enforced server-side (their runs and imports are
+rejected) and hidden from the UI — tabs, buttons and the artifact picker only show what's
+enabled.
 
 ## Recon artifacts
 
 The **Artifacts** tab (per workspace) ingests recon outputs through parser plugins into a
 tidy, per-artifact view — nothing is executed, it's pure text parsing:
 
-- **`dsregcmd /status`** — a device's Entra ID (Azure AD) / domain join state. The boxed
-  sections become tables, with a summary strip up top (AzureAdJoined, DomainJoined, tenant
-  name/id, MDM URL, PRT status).
-- **PAC files** (`FindProxyForURL`) — the proxy servers, and more usefully the internal
-  hostnames, domains and subnets routed **DIRECT** (the estate that bypasses the proxy —
-  recon gold), plus every host/domain pattern and helper used. The condition→action pairing
-  is a static best-effort read of typical PAC structure, not a JS interpreter.
+- **`dsregcmd /status`** — a device's Entra ID (Azure AD) / domain join state. A plain-English
+  headline (e.g. *Hybrid Azure AD joined to Contoso*), a **Notable** panel of security-relevant
+  findings (PRT present, MDM enrolment, non-TPM device key), an at-a-glance grid, and the full
+  boxed sections as tables.
+- **PAC files** (`FindProxyForURL`) — the reconstructed **rules** (condition → PROXY/DIRECT, in
+  order), the proxy servers, and the internal hostnames/domains/subnets routed **DIRECT** (the
+  estate that bypasses the proxy — recon gold). Plus a **Misconfigurations** panel:
+  credentials-in-proxy, public-IP proxy, DNS-leak helpers (`isInNet`/`dnsResolve` on the host),
+  overly-broad wildcards, risky defaults. Parsed statically — the rule pairing is a best-effort
+  read of typical PAC structure, not a JS interpreter.
+- **nmap** (`-oX` XML, `-oG` greppable, or the normal report) — live hosts, open ports, services
+  and versions, with notable services (SMB, LDAP, Kerberos, RDP, databases…) highlighted.
 
 Paste or upload; the type is auto-detected (or pick it). Saved per workspace and wiped with
 it.
@@ -264,7 +275,9 @@ a fake resolver, exports (all datasets and formats), custom fingerprint signatur
 default-page detection, screenshots (capture bookkeeping, skip rules, image serving —
 against a stub renderer, so no browser needed), dirsearch import parsing, nuclei parsing +
 host-matched import, IIS 8.3 short-name enumeration (against a faithful fake
-IIS server — detection, name recovery, collisions, budget), dsregcmd + PAC parsing, task
+IIS server — detection, name recovery, collisions, budget), the parser plugins (dsregcmd,
+PAC incl. misconfig detection, nmap XML/greppable/normal), per-workspace plugin
+enable/disable + enforcement, the plugin framework (registry, auto-detect, drop-in), task
 stopping/cancellation, URL/tree analysis, ASN parsing, and routes (import, wipe-cascade,
 access control, filters).
 

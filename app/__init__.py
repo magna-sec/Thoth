@@ -88,6 +88,7 @@ def _lightweight_migrate():
         "workspaces": {
             "proxy": "VARCHAR(255)",
             "scope": "TEXT",
+            "enabled_plugins": "JSON" if db.engine.dialect.name == "postgresql" else "TEXT",
         },
         "runs": {
             "log": "TEXT",

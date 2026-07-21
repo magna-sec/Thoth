@@ -1,0 +1,49 @@
+{# Renders a parsed nmap artifact. Context: `art`, `d` (art.data_json). #}
+<div class="stat-strip">
+  <div class="stat"><div class="stat-num">{{ d.summary.hosts }}</div><div class="stat-label">Hosts up</div></div>
+  <div class="stat"><div class="stat-num">{{ d.summary.open_ports }}</div><div class="stat-label">Open ports</div></div>
+  <div class="stat"><div class="stat-num">{{ d.summary.services|length }}</div><div class="stat-label">Services</div></div>
+</div>
+
+{% if d.summary.interesting %}
+<div class="card">
+  <h2>Notable services</h2>
+  <div class="fp-row">{% for s in d.summary.interesting %}<span class="chip tech mono">{{ s }}</span>{% endfor %}</div>
+</div>
+{% endif %}
+
+{% if d.summary.services %}
+<div class="card">
+  <h2>Service breakdown</h2>
+  <div class="fp-row">
+    {% for name, n in d.summary.services %}<span class="chip mono">{{ name }} <span class="muted">{{ n }}</span></span>{% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% for h in d.hosts %}
+<div class="card">
+  <div class="table-toolbar">
+    <h2 class="sensitive mono">{{ h.address }}
+      {% if h.hostnames %}<span class="muted">{{ h.hostnames | join(', ') }}</span>{% endif %}</h2>
+    <span class="muted" style="font-size:12px">
+      {{ h.ports|length }} open{% if h.os %} · {{ h.os }}{% endif %}{% if h.mac %} · {{ h.mac }}{% endif %}
+    </span>
+  </div>
+  {% if h.ports %}
+  <table class="data">
+    <thead><tr><th>Port</th><th>Service</th><th>Product / version</th></tr></thead>
+    <tbody>
+      {% for p in h.ports %}
+      <tr>
+        <td class="mono">{{ p.port }}/{{ p.proto }}
+          {% if p.state != "open" %}<span class="muted">{{ p.state }}</span>{% endif %}</td>
+        <td>{% if p.name in d.summary.interesting %}<span class="chip tech mono">{{ p.name }}</span>{% else %}<span class="mono">{{ p.name or '—' }}</span>{% endif %}</td>
+        <td class="muted sensitive">{{ (p.product ~ ' ' ~ p.version) | trim or (p.extra or '') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No open ports.</p>{% endif %}
+</div>
+{% endfor %}

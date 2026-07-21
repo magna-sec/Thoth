@@ -31,9 +31,25 @@
     <h2>New workspace</h2>
     <form method="post" action="{{ url_for('workspaces.create_workspace') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="configure_plugins" value="1">
       <label>Name<input name="name" required placeholder="Acme external"></label>
       <label>Client<input name="client" placeholder="Acme Corp"></label>
-      <button class="btn primary" type="submit">Create</button>
+
+      <div style="margin:10px 0 4px"><strong>Plugins</strong>
+        <span class="muted" style="font-size:12px">— pick what this engagement needs. All on by default.</span></div>
+      <div class="plugin-pick">
+        <div class="muted" style="font-size:11px; grid-column:1/-1">MODULES</div>
+        {% for p in catalog.modules %}
+        <label class="pp-item"><input type="checkbox" name="plugins" value="{{ p.name }}" checked>
+          <span class="mono">{{ p.name }}</span></label>
+        {% endfor %}
+        <div class="muted" style="font-size:11px; grid-column:1/-1; margin-top:6px">PARSERS</div>
+        {% for p in catalog.parsers %}
+        <label class="pp-item"><input type="checkbox" name="plugins" value="{{ p.name }}" checked>
+          <span class="mono">{{ p.name }}</span></label>
+        {% endfor %}
+      </div>
+      <button class="btn primary" type="submit" style="margin-top:10px">Create</button>
     </form>
   </div>
   {% endif %}

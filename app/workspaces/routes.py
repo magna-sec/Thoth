@@ -41,6 +41,29 @@ NUCLEI_IMPORT = "nuclei-import"
 ws_bp = Blueprint("workspaces", __name__, url_prefix="/workspaces")
 
 
+def _can_manage(ws):
+    """Who may change a workspace's plugins/scope: a global admin or the workspace owner."""
+    if current_user.is_admin:
+        return True
+    m = WorkspaceMember.query.filter_by(workspace_id=ws.id, user_id=current_user.id,
+                                        role="owner").first()
+    return m is not None
+
+
+def plugin_catalog(ws=None):
+    """Modules + parsers, each with its enabled state for this workspace (all-on if ws is
+    None, e.g. the create form)."""
+    def row(name, title, description):
+        return {"name": name, "title": title, "description": description,
+                "enabled": ws is None or ws.plugin_enabled(name)}
+    mods = sorted(all_modules().values(), key=lambda m: m.name)
+    pars = sorted(all_parsers().values(), key=lambda p: p.name)
+    return {
+        "modules": [row(m.name, m.name, m.description) for m in mods],
+        "parsers": [row(p.name, p.title, p.description) for p in pars],
+    }
+
+
 def _get_member_workspace(workspace_id):
     # Workspaces are shared across the team; any authenticated user can work in one.
     # Structural actions (create / wipe / user management) are admin-only (see decorators).
@@ -54,7 +77,8 @@ def _get_member_workspace(workspace_id):
 @login_required
 def list_workspaces():
     workspaces = Workspace.query.order_by(Workspace.created_at.desc()).all()
-    return render_template("workspaces/list.html", workspaces=workspaces)
+    return render_template("workspaces/list.html", workspaces=workspaces,
+                           catalog=plugin_catalog())
 
 
 @ws_bp.route("/new", methods=["POST"])
@@ -66,6 +90,10 @@ def create_workspace():
         return redirect(url_for("workspaces.list_workspaces"))
     ws = Workspace(name=name, client=request.form.get("client", "").strip(),
                    created_by=current_user.id)
+    # The create form ships a plugin picker; if it was submitted, honour the selection
+    # (empty = none). Absent marker keeps the default: NULL = all plugins enabled.
+    if request.form.get("configure_plugins"):
+        ws.enabled_plugins = request.form.getlist("plugins")
     db.session.add(ws)
     db.session.flush()
     db.session.add(WorkspaceMember(workspace_id=ws.id, user_id=current_user.id,
@@ -109,7 +137,10 @@ def detail(workspace_id):
                            run_scope=run_scope, user_by_id=user_by_id, fuzz_cov=fuzz_cov,
                            analysis=analysis, shots=_screenshots(ws.id),
                            scope_out=scope_out, iis_ids=iis_ids,
-                           artifact_rows=_artifact_rows(ws.id), parsers=all_parsers(),
+                           artifact_rows=_artifact_rows(ws.id),
+                           parsers={n: p for n, p in all_parsers().items()
+                                    if ws.plugin_enabled(n)},
+                           catalog=plugin_catalog(ws), can_manage=_can_manage(ws),
                            guessed_domain=(_domains(None, {t.host for t in domains})
                                            or [""])[0])
 
@@ -728,6 +759,9 @@ def add_artifact(workspace_id):
         flash("Couldn't tell which plugin handles that — pick the type explicitly."
               if kind == "auto" else f"No plugin named '{kind}'.", "error")
         return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+    if not ws.plugin_enabled(plugin.name):
+        flash(f"The '{plugin.title}' parser isn't enabled for this workspace.", "error")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
 
     try:
         data = plugin.parse(raw)
@@ -964,7 +998,21 @@ def activity(workspace_id):
 @login_required
 def update_settings(workspace_id):
     ws = _get_member_workspace(workspace_id)
-    ws.proxy = request.form.get("proxy", "").strip() or None
+    # A dedicated plugins form manages only enabled_plugins (admin/owner only); the
+    # proxy/scope form manages only those. Each updates a field only when it's present,
+    # so one form never clobbers the other's settings.
+    if request.form.get("manage_plugins"):
+        if not _can_manage(ws):
+            abort(403)
+        ws.enabled_plugins = request.form.getlist("plugins")
+        db.session.commit()
+        flash(f"Plugins updated — {len(ws.enabled_plugins)} enabled for this workspace.",
+              "info")
+        return redirect(request.form.get("next")
+                        or url_for("workspaces.detail", workspace_id=ws.id) + "#fuzz")
+
+    if "proxy" in request.form:
+        ws.proxy = request.form.get("proxy", "").strip() or None
     if "scope" in request.form:
         ws.scope = request.form.get("scope", "").strip() or None
     db.session.commit()
@@ -1010,6 +1058,9 @@ def view_response(workspace_id):
 @login_required
 def check_all(workspace_id):
     ws = _get_member_workspace(workspace_id)
+    if not ws.plugin_enabled("alive"):
+        flash("The 'alive' module isn't enabled for this workspace.", "error")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#domains")
     if not Target.query.filter_by(workspace_id=ws.id).count():
         flash("Add subdomains first.", "error")
         return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#domains")

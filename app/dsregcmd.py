@@ -13,14 +13,71 @@ import re
 _TITLE = re.compile(r"^\s*\|\s*(?P<title>.+?)\s*\|\s*$")
 _RULE = re.compile(r"^\s*\+-+\+\s*$")
 
-# Fields surfaced up top, in reading order. Matched case-insensitively against any section.
-SUMMARY_KEYS = [
-    "AzureAdJoined", "EnterpriseJoined", "DomainJoined", "WorkplaceJoined",
-    "DeviceName", "DeviceId", "TenantName", "TenantId", "Idp", "DomainName",
-    "MdmUrl", "MdmEnrollmentUrl", "AzureAdPrt", "AzureAdPrtauthority",
-    "OsVersion", "KeyProvider", "TpmProtected",
+# Fields surfaced up top, in reading order, with human labels. Matched case-insensitively.
+SUMMARY_FIELDS = [
+    ("AzureAdJoined", "Azure AD Joined"),
+    ("EnterpriseJoined", "Enterprise Joined"),
+    ("DomainJoined", "Domain Joined"),
+    ("WorkplaceJoined", "Workplace Joined"),
+    ("DeviceName", "Device Name"),
+    ("DeviceId", "Device ID"),
+    ("TenantName", "Tenant"),
+    ("TenantId", "Tenant ID"),
+    ("Idp", "Identity Provider"),
+    ("DomainName", "AD Domain"),
+    ("MdmUrl", "MDM URL"),
+    ("AzureAdPrt", "Azure AD PRT"),
+    ("KeyProvider", "Key Provider"),
+    ("TpmProtected", "TPM Protected"),
+    ("OsVersion", "OS Version"),
 ]
+SUMMARY_KEYS = [k for k, _ in SUMMARY_FIELDS]  # back-compat
 _YESNO = {"yes": True, "no": False}
+
+
+def interpret(index):
+    """Derive the human headline + security-notable observations from the parsed fields.
+
+    `index` is the lowercased key->value map. Returns ``{"headline", "notable"}`` where
+    notable is a list of ``{severity, title, detail}``.
+    """
+    def b(key):
+        return _YESNO.get((index.get(key.lower()) or "").strip().lower())
+
+    def v(key):
+        return index.get(key.lower())
+
+    aad, dj, ej, wpj = b("AzureAdJoined"), b("DomainJoined"), b("EnterpriseJoined"), \
+        b("WorkplaceJoined")
+    tenant = v("TenantName") or v("TenantId")
+    if aad and dj:
+        headline = "Hybrid Azure AD joined" + (f" to {tenant}" if tenant else "")
+    elif aad:
+        headline = "Azure AD joined" + (f" to {tenant}" if tenant else "")
+    elif dj:
+        headline = "On-prem domain joined" + (f" ({v('DomainName')})" if v("DomainName") else "")
+    elif wpj:
+        headline = "Workplace joined (registered)"
+    else:
+        headline = "Not joined (standalone)"
+
+    notable = []
+
+    def add(sev, title, detail):
+        notable.append({"severity": sev, "title": title, "detail": detail})
+
+    if b("AzureAdPrt"):
+        add("medium", "Primary Refresh Token present",
+            "AzureAdPrt = YES — a PRT is cached on this device. It's a high-value token-theft "
+            "target that yields SSO to Entra ID resources.")
+    if v("MdmUrl"):
+        add("info", "MDM enrolled", f"Managed via {v('MdmUrl')}.")
+    if b("TpmProtected") is False:
+        add("low", "Device key not TPM-protected",
+            "TpmProtected = NO — the device key is software-protected and easier to extract.")
+    if ej:
+        add("info", "Enterprise (on-prem AD FS) joined", "EnterpriseJoined = YES.")
+    return {"headline": headline, "notable": notable}
 
 
 def _kv(line):
@@ -72,12 +129,12 @@ def parse_dsregcmd(text):
         sections.append(current)
 
     summary = []
-    for key in SUMMARY_KEYS:
+    for key, label in SUMMARY_FIELDS:
         if key.lower() in index:
             value = index[key.lower()]
-            summary.append({"key": key, "value": value,
+            summary.append({"key": key, "label": label, "value": value,
                             "bool": _YESNO.get(value.strip().lower())})
-    return {"sections": sections, "summary": summary}
+    return {"sections": sections, "summary": summary, **interpret(index)}
 
 
 def looks_like_dsregcmd(text):

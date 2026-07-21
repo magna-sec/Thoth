@@ -35,8 +35,16 @@ class Workspace(db.Model):
     # Engagement scope — see app/scope.py. Empty means "no restriction" so existing
     # workspaces are unaffected; once set, nothing outside it is ever requested.
     scope = db.Column(db.Text)
+    # Plugins enabled for this workspace (module + parser names). NULL = all enabled
+    # (default, and what every pre-existing workspace keeps); a list restricts to it.
+    enabled_plugins = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    def plugin_enabled(self, name):
+        """True if a plugin (module or parser) is enabled here. NULL enabled_plugins means
+        everything is on — so existing workspaces and the tests are unaffected."""
+        return self.enabled_plugins is None or name in self.enabled_plugins
 
     members = db.relationship("WorkspaceMember", back_populates="workspace",
                               cascade="all, delete-orphan")

@@ -1,18 +1,42 @@
 {# Renders a parsed dsregcmd artifact. Context: `art`, `d` (art.data_json). #}
-{% if d.summary %}
-<div class="stat-strip" style="flex-wrap:wrap">
-  {% for s in d.summary %}
-  <div class="stat" style="min-width:150px">
-    <div class="stat-num" style="font-size:16px">
-      {% if s.bool is sameas true %}<span style="color:var(--accent)">YES</span>
-      {% elif s.bool is sameas false %}<span class="muted">NO</span>
-      {% else %}<span class="sensitive" style="font-size:13px; word-break:break-all">{{ s.value or '—' }}</span>{% endif %}
-    </div>
-    <div class="stat-label">{{ s.key }}</div>
+<div class="headline-banner">
+  <span class="headline-icon">🪟</span>
+  <div>
+    <div class="headline-main sensitive">{{ d.headline }}</div>
+    <div class="muted" style="font-size:12px">Windows device / Entra ID join state</div>
   </div>
-  {% endfor %}
+</div>
+
+{% if d.notable %}
+<div class="card">
+  <h2>Notable</h2>
+  <ul class="notable-list">
+    {% for n in d.notable %}
+    <li><span class="chip sev-{{ n.severity }}">{{ n.severity }}</span>
+      <strong>{{ n.title }}</strong> <span class="muted">— {{ n.detail }}</span></li>
+    {% endfor %}
+  </ul>
 </div>
 {% endif %}
+
+{% if d.summary %}
+<div class="card">
+  <h2>At a glance</h2>
+  <div class="kv-grid">
+    {% for s in d.summary %}
+    <div class="kv-cell">
+      <div class="kv-label">{{ s.label }}</div>
+      <div class="kv-value sensitive">
+        {% if s.bool is sameas true %}<span class="pill pill-yes">Yes</span>
+        {% elif s.bool is sameas false %}<span class="pill pill-no">No</span>
+        {% else %}<span class="mono">{{ s.value or '—' }}</span>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="artifact-grid">
   {% for sec in d.sections %}
   <div class="artifact-sec">

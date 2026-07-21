@@ -96,6 +96,49 @@ def test_pac_extracts_proxies_direct_and_subnets():
     assert "dnsDomainIs" in d["helpers"] and "isInNet" in d["helpers"]
 
 
+def test_pac_reconstructs_rules_and_default():
+    d = parse_pac(PAC)
+    assert len(d["rules"]) == 3
+    assert d["rules"][0]["action"] == "DIRECT"
+    assert d["rules"][1]["action"] == "PROXY"
+    assert d["default_action"] == "PROXY"            # last unconditional return
+
+
+def test_pac_flags_common_misconfigs():
+    bad = """function FindProxyForURL(url, host) {
+        if (isInNet(host, "10.0.0.0", "255.0.0.0")) return "DIRECT";
+        if (shExpMatch(host, "*")) return "PROXY 8.8.8.8:3128";
+        return "PROXY user:pass@proxy.corp:8080";
+    }"""
+    titles = {f["title"] for f in parse_pac(bad)["findings"]}
+    assert "Credentials in proxy string" in titles          # user:pass@
+    assert "Proxy on a public IP" in titles                 # 8.8.8.8
+    assert "Resolves every hostname (DNS leak)" in titles   # isInNet(host,…)
+    assert "Wildcard rule matches everything" in titles     # shExpMatch(host,"*")
+
+
+def test_pac_clean_file_has_few_findings():
+    clean = """function FindProxyForURL(url, host) {
+        if (isPlainHostName(host) || dnsDomainIs(host, "corp.local")) return "DIRECT";
+        return "PROXY proxy.corp.local:8080";
+    }"""
+    titles = {f["title"] for f in parse_pac(clean)["findings"]}
+    assert "Credentials in proxy string" not in titles
+    assert "Resolves every hostname (DNS leak)" not in titles
+
+
+def test_dsregcmd_headline_and_notable():
+    from app.dsregcmd import parse_dsregcmd
+    hybrid = parse_dsregcmd(
+        "| Device State |\nAzureAdJoined : YES\nDomainJoined : YES\n"
+        "| Tenant Details |\nTenantName : Contoso\n| SSO State |\nAzureAdPrt : YES\n")
+    assert "Hybrid" in hybrid["headline"] and "Contoso" in hybrid["headline"]
+    assert any("Primary Refresh Token" in n["title"] for n in hybrid["notable"])
+
+    standalone = parse_dsregcmd("| Device State |\nAzureAdJoined : NO\nDomainJoined : NO\n")
+    assert "Not joined" in standalone["headline"]
+
+
 def test_pac_detection_and_rejection():
     assert looks_like_pac(PAC)
     with pytest.raises(ValueError):

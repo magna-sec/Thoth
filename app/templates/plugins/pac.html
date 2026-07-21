@@ -1,23 +1,67 @@
 {# Renders a parsed PAC artifact. Context: `art`, `d` (art.data_json). #}
-<div class="stat-strip">
-  <div class="stat"><div class="stat-num">{{ d.proxies|length }}</div><div class="stat-label">Proxies</div></div>
-  <div class="stat"><div class="stat-num">{{ d.direct_patterns|length }}</div><div class="stat-label">DIRECT (bypass)</div></div>
-  <div class="stat"><div class="stat-num">{{ d.subnets|length }}</div><div class="stat-label">Subnets</div></div>
-  <div class="stat"><div class="stat-num">{{ d.domains|length }}</div><div class="stat-label">Patterns</div></div>
-  <div class="stat"><div class="stat-num">{{ d.proxy_returns }}/{{ d.direct_returns }}</div><div class="stat-label">PROXY / DIRECT returns</div></div>
+<div class="headline-banner">
+  <span class="headline-icon">🌐</span>
+  <div>
+    <div class="headline-main">
+      {{ d.proxies|length }} proxy(ies) ·
+      {{ d.direct_returns }} DIRECT / {{ d.proxy_returns }} PROXY rule(s) ·
+      default <span class="mono">{{ d.default_action or '—' }}</span>
+    </div>
+    <div class="muted" style="font-size:12px">Proxy auto-config — parsed statically, never executed</div>
+  </div>
 </div>
 
+{% if d.findings %}
 <div class="card">
-  <h2>Proxy servers</h2>
-  {% if d.proxies %}<div class="fp-row">{% for p in d.proxies %}<span class="chip sensitive mono">{{ p }}</span>{% endfor %}</div>
-  {% else %}<p class="muted">None found.</p>{% endif %}
+  <h2>Misconfigurations <span class="muted">({{ d.findings|length }})</span></h2>
+  <ul class="notable-list">
+    {% for f in d.findings %}
+    <li><span class="chip sev-{{ f.severity }}">{{ f.severity }}</span>
+      <strong>{{ f.title }}</strong> <span class="muted">— {{ f.detail }}</span></li>
+    {% endfor %}
+  </ul>
 </div>
+{% endif %}
 
 <div class="card">
-  <h2>Bypasses the proxy — DIRECT <span class="muted">({{ d.direct_patterns|length }})</span></h2>
-  <p class="muted" style="font-size:12px; margin-top:-4px">The internal estate that connects directly, without the proxy — the recon-valuable part.</p>
-  {% if d.direct_patterns %}<div class="fp-row">{% for p in d.direct_patterns %}<span class="chip tech mono sensitive">{{ p }}</span>{% endfor %}</div>
-  {% else %}<p class="muted">None detected.</p>{% endif %}
+  <h2>Rules <span class="muted">— in order; first match wins</span></h2>
+  <table class="data">
+    <thead><tr><th style="width:32px">#</th><th>If the host matches…</th><th>→</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for r in d.rules %}
+      <tr>
+        <td class="muted mono">{{ loop.index }}</td>
+        <td class="sensitive">
+          {% if r.conditions %}
+            {% for helper, pat in r.conditions %}
+            <span class="chip mono" title="{{ helper }}">{{ pat if pat else helper }}</span>
+            {% endfor %}
+          {% else %}<span class="muted">anything else (default)</span>{% endif %}
+        </td>
+        <td class="muted">→</td>
+        <td>
+          {% if r.action == "DIRECT" %}<span class="pill pill-direct">DIRECT</span>
+          {% elif r.action == "PROXY" %}{% for p in r.proxies %}<span class="chip sensitive mono">{{ p }}</span>{% endfor %}
+          {% else %}<span class="mono sensitive">{{ r.action }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Proxy servers <span class="muted">({{ d.proxies|length }})</span></h2>
+    {% if d.proxies %}<div class="fp-row">{% for p in d.proxies %}<span class="chip sensitive mono">{{ p }}</span>{% endfor %}</div>
+    {% else %}<p class="muted">None found.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Bypasses proxy — DIRECT <span class="muted">({{ d.direct_patterns|length }})</span></h2>
+    <p class="muted" style="font-size:12px; margin-top:-4px">The internal estate reached directly — recon-valuable.</p>
+    {% if d.direct_patterns %}<div class="fp-row">{% for p in d.direct_patterns %}<span class="chip tech mono sensitive">{{ p }}</span>{% endfor %}</div>
+    {% else %}<p class="muted">None detected.</p>{% endif %}
+  </div>
 </div>
 
 <div class="grid-2">
@@ -26,8 +70,7 @@
     {% if d.subnets %}<div class="fp-row">{% for s in d.subnets %}<span class="chip mono sensitive">{{ s }}</span>{% endfor %}</div>{% else %}<p class="muted">None.</p>{% endif %}
   </div>
   <div class="card">
-    <h2>All host / domain patterns <span class="muted">({{ d.domains|length }})</span></h2>
-    {% if d.domains %}<div class="fp-row">{% for x in d.domains %}<span class="chip mono sensitive">{{ x }}</span>{% endfor %}</div>{% else %}<p class="muted">None.</p>{% endif %}
-    <p class="muted" style="font-size:12px; margin-top:10px">Helpers used: {{ d.helpers | join(', ') or '—' }}</p>
+    <h2>Helpers used</h2>
+    <div class="fp-row">{% for h in d.helpers %}<span class="chip mono">{{ h }}</span>{% else %}<span class="muted">—</span>{% endfor %}</div>
   </div>
 </div>

@@ -35,10 +35,10 @@
     <button class="btn small {{ cls }}" type="submit" title="{{ title }}">{{ label }}</button>
   </form>
   {% endmacro %}
-  {{ runbtn('alive', 'Run alive') }}
-  {{ runbtn('dirsearch', 'Fuzz ▶', 'primary', 'Directory fuzzing on this subdomain (skips already-tested paths)') }}
-  {{ runbtn('screenshot', 'Screenshot 📷️', '', 'Capture this site in a headless browser', true) }}
-  {% if is_iis %}
+  {% if ws.plugin_enabled('alive') %}{{ runbtn('alive', 'Run alive') }}{% endif %}
+  {% if ws.plugin_enabled('dirsearch') %}{{ runbtn('dirsearch', 'Fuzz ▶', 'primary', 'Directory fuzzing on this subdomain (skips already-tested paths)') }}{% endif %}
+  {% if ws.plugin_enabled('screenshot') %}{{ runbtn('screenshot', 'Screenshot 📷️', '', 'Capture this site in a headless browser', true) }}{% endif %}
+  {% if is_iis and ws.plugin_enabled('iistilde') %}
   {# only_iis managed but left unticked, so it tests this host regardless of fingerprint. #}
   <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -52,8 +52,8 @@
   <details class="more-actions">
     <summary class="btn small">More ▾</summary>
     <div class="more-menu">
-      {{ runbtn('dirsearch', 'Fuzz (force) ▶', '', 'Re-test every path, ignoring the dedup ledger', true) }}
-      {% if not is_iis %}
+      {% if ws.plugin_enabled('dirsearch') %}{{ runbtn('dirsearch', 'Fuzz (force) ▶', '', 'Re-test every path, ignoring the dedup ledger', true) }}{% endif %}
+      {% if not is_iis and ws.plugin_enabled('iistilde') %}
       <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="workspace_id" value="{{ ws.id }}">

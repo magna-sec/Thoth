@@ -39,6 +39,9 @@ def start():
     module = get_module(module_name)
     if module is None:
         abort(400, "Unknown module")
+    if not ws.plugin_enabled(module_name):
+        flash(f"The '{module_name}' module isn't enabled for this workspace.", "error")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id))
     # Discovery modules create targets, so they must be allowed to run without any.
     if module.needs_targets and not Target.query.filter_by(workspace_id=ws.id).count():
         flash("Add subdomains before running a module — or run discovery to find some.",

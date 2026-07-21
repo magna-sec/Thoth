@@ -31,8 +31,8 @@
   <button class="tab" data-tab="findings">Results</button>
   <button class="tab" data-tab="analysis">Analysis</button>
   <button class="tab" data-tab="domains">Subdomains</button>
-  <button class="tab" data-tab="shots">Screenshots</button>
-  <button class="tab" data-tab="fuzz">Directory Fuzzing</button>
+  {% if ws.plugin_enabled('screenshot') %}<button class="tab" data-tab="shots">Screenshots</button>{% endif %}
+  {% if ws.plugin_enabled('dirsearch') %}<button class="tab" data-tab="fuzz">Directory Fuzzing</button>{% else %}<button class="tab" data-tab="fuzz">Settings</button>{% endif %}
   <button class="tab" data-tab="runs">Tasks</button>
   <button class="tab" data-tab="artifacts">Artifacts{% if artifacts %} <span class="muted">{{ artifacts|length }}</span>{% endif %}</button>
   {% if current_user.is_admin %}<button class="tab danger-tab" data-tab="danger">Wipe</button>{% endif %}
@@ -56,14 +56,16 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn primary" type="submit">Check all live ▶</button>
         </form>
+        {% if ws.plugin_enabled('screenshot') %}
         <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="workspace_id" value="{{ ws.id }}">
           <input type="hidden" name="module" value="screenshot">
           <button class="btn" type="submit" title="Headless-browser screenshot of every subdomain">Screenshot all 📷️</button>
         </form>
+        {% endif %}
         <button class="btn tab-jump" data-goto="domains" type="button">Manage subdomains</button>
-        <button class="btn tab-jump" data-goto="fuzz" type="button">Directory fuzzing</button>
+        {% if ws.plugin_enabled('dirsearch') %}<button class="btn tab-jump" data-goto="fuzz" type="button">Directory fuzzing</button>{% endif %}
       </div>
     </div>
     <div class="card">
@@ -243,6 +245,7 @@
 
 <!-- SUBDOMAINS -->
 <section class="tabpane" data-pane="domains" id="domains">
+  {% if ws.plugin_enabled('dnsbrute') %}
   <div class="card">
     <h2>Discover subdomains <span class="muted">— DNS brute force</span></h2>
     <p class="muted" style="font-size:12px">
@@ -268,6 +271,7 @@
       <button class="btn primary" type="submit">Discover ▶</button>
     </form>
   </div>
+  {% endif %}
 
   <div class="card">
     <h2>Add subdomains</h2>
@@ -334,7 +338,7 @@
       </select>
       <button class="btn small" type="button" id="df-reset" title="Filters are remembered across refreshes — this clears them">Reset filters</button>
       {{ exporter('hosts', 'Export inventory', 'Subdomain inventory with IP/ASN, WAF, tech and scope') }}
-      {% if iis_ids %}
+      {% if iis_ids and ws.plugin_enabled('iistilde') %}
       <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="workspace_id" value="{{ ws.id }}">
@@ -343,10 +347,12 @@
         <button class="btn" type="submit" title="Enumerate IIS 8.3 short names across the {{ iis_ids|length }} host(s) fingerprinted as IIS">Scan {{ iis_ids|length }} IIS host(s) for tilde ▶</button>
       </form>
       {% endif %}
+      {% if ws.plugin_enabled('alive') %}
       <form method="post" action="{{ url_for('workspaces.check_all', workspace_id=ws.id) }}" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn primary" type="submit" title="Runs the alive module across all subdomains (recorded + feeds Analysis)">Check all live ▶</button>
       </form>
+      {% endif %}
     </div>
   </div>
 
@@ -406,6 +412,7 @@
 </section>
 
 <!-- SCREENSHOTS -->
+{% if ws.plugin_enabled('screenshot') %}
 <section class="tabpane" data-pane="shots" id="shots">
   <div class="card">
     <div class="table-toolbar">
@@ -491,6 +498,7 @@
     {% endif %}
   </div>
 </section>
+{% endif %}
 
 <!-- DIRECTORY FUZZING -->
 <section class="tabpane" data-pane="fuzz" id="fuzz">
@@ -517,6 +525,30 @@
       </div>
       <button class="btn primary" type="submit" style="margin-top:8px">Save settings</button>
     </form>
+
+    {% if can_manage %}
+    <hr style="border-color:var(--border); margin:12px 0">
+    <form method="post" action="{{ url_for('workspaces.update_settings', workspace_id=ws.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="manage_plugins" value="1">
+      <input type="hidden" name="next" value="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#fuzz">
+      <div style="margin-bottom:4px"><strong>Plugins enabled for this workspace</strong>
+        <span class="muted" style="font-size:12px">— tabs, buttons and imports for disabled plugins are hidden. <a href="{{ url_for('plugins.catalog') }}">Catalogue →</a></span></div>
+      <div class="plugin-pick">
+        <div class="muted" style="font-size:11px; grid-column:1/-1">MODULES</div>
+        {% for p in catalog.modules %}
+        <label class="pp-item" title="{{ p.description }}"><input type="checkbox" name="plugins" value="{{ p.name }}" {{ 'checked' if p.enabled }}>
+          <span class="mono">{{ p.name }}</span></label>
+        {% endfor %}
+        <div class="muted" style="font-size:11px; grid-column:1/-1; margin-top:6px">PARSERS</div>
+        {% for p in catalog.parsers %}
+        <label class="pp-item" title="{{ p.description }}"><input type="checkbox" name="plugins" value="{{ p.name }}" {{ 'checked' if p.enabled }}>
+          <span class="mono">{{ p.name }}</span></label>
+        {% endfor %}
+      </div>
+      <button class="btn" type="submit" style="margin-top:8px">Save plugins</button>
+    </form>
+    {% endif %}
     <hr style="border-color:var(--border); margin:12px 0">
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
       <form method="post" action="{{ url_for('workspaces.clear_ledger', workspace_id=ws.id) }}" style="margin:0"
@@ -528,6 +560,7 @@
     </div>
   </div>
 
+  {% if ws.plugin_enabled('dirsearch') %}
   <div class="card">
     <h2>Directory fuzzing</h2>
     <form method="post" action="{{ url_for('runs.start') }}" id="fuzz-form">
@@ -578,6 +611,7 @@
     <pre id="fuzz-console" class="console">Waiting for a task… start one above and hits/logs stream here.</pre>
     <p class="muted" style="font-size:12px">Hits stream live in all modes. Full verbose per-request logs also stream when Redis is enabled.</p>
   </div>
+  {% endif %}
 </section>
 
 <!-- RUNS -->
@@ -626,6 +660,10 @@
 <section class="tabpane" data-pane="artifacts" id="artifacts">
   <div class="card">
     <h2>Add a recon artifact <span class="muted">— via a parser plugin</span></h2>
+    {% if not parsers %}
+    <p class="muted">No parser plugins are enabled for this workspace. Enable some in
+      <button class="btn small tab-jump" data-goto="fuzz" type="button">Settings</button>.</p>
+    {% else %}
     <p class="muted" style="font-size:12px">
       Paste or upload something a parser plugin understands
       ({% for p in parsers.values() %}<span class="mono">{{ p.title }}</span>{{ ", " if not loop.last }}{% endfor %});
@@ -647,6 +685,7 @@
         <button class="btn primary" type="submit">Parse &amp; save</button>
       </div>
     </form>
+    {% endif %}
   </div>
 
   <div class="card">
