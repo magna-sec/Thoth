@@ -20,10 +20,9 @@ from sqlalchemy import func
 from ..auth import admin_required
 from .. import exports
 from ..extensions import db
-from ..dsregcmd import looks_like_dsregcmd, parse_dsregcmd
 from ..importers import ImportError_, ledger_key, parse_dirsearch
 from ..nucleiparse import NucleiParseError, parse_nuclei
-from ..pacparse import looks_like_pac, parse_pac
+from ..plugins import all_parsers, detect_parser, get_parser
 from ..models import (Artifact, Finding, Note, Run, Target, TestedPath, User, Workspace,
                       WorkspaceMember)
 from ..modules import all_modules, get_module
@@ -110,8 +109,7 @@ def detail(workspace_id):
                            run_scope=run_scope, user_by_id=user_by_id, fuzz_cov=fuzz_cov,
                            analysis=analysis, shots=_screenshots(ws.id),
                            scope_out=scope_out, iis_ids=iis_ids,
-                           artifacts=Artifact.query.filter_by(workspace_id=ws.id)
-                           .order_by(Artifact.created_at.desc()).all(),
+                           artifact_rows=_artifact_rows(ws.id), parsers=all_parsers(),
                            guessed_domain=(_domains(None, {t.host for t in domains})
                                            or [""])[0])
 
@@ -725,31 +723,56 @@ def add_artifact(workspace_id):
         return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
 
     kind = request.form.get("kind", "auto")
-    if kind == "auto":
-        kind = ("dsregcmd" if looks_like_dsregcmd(raw)
-                else "pac" if looks_like_pac(raw) else "")
+    plugin = detect_parser(raw) if kind == "auto" else get_parser(kind)
+    if plugin is None:
+        flash("Couldn't tell which plugin handles that — pick the type explicitly."
+              if kind == "auto" else f"No plugin named '{kind}'.", "error")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
 
     try:
-        if kind == "dsregcmd":
-            data = parse_dsregcmd(raw)
-            if not data["sections"]:
-                raise ValueError("No dsregcmd sections found in that text.")
-        elif kind == "pac":
-            data = parse_pac(raw)
-        else:
-            raise ValueError("Couldn't tell whether that's dsregcmd output or a PAC file — "
-                             "pick the type explicitly.")
+        data = plugin.parse(raw)
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
 
-    art = Artifact(workspace_id=ws.id, kind=kind, name=name, raw=raw[:200_000],
+    art = Artifact(workspace_id=ws.id, kind=plugin.name, name=name, raw=raw[:200_000],
                    data_json=data, created_by=current_user.id)
     db.session.add(art)
     db.session.commit()
-    label = "dsregcmd status" if kind == "dsregcmd" else "PAC file"
-    flash(f"Parsed and saved {label}" + (f" · {name}" if name else ""), "info")
-    return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+    flash(f"Parsed and saved {plugin.title}" + (f" · {name}" if name else ""), "info")
+    # Open it straight away — the whole point is to go and read it.
+    return redirect(url_for("workspaces.artifact_detail", workspace_id=ws.id,
+                            artifact_id=art.id))
+
+
+def _artifact_summary(art):
+    """A one-line summary for the artifact list — delegated to the plugin that made it."""
+    plugin = get_parser(art.kind)
+    if plugin is None:
+        return art.kind
+    try:
+        return plugin.summary(art.data_json or {})
+    except Exception:  # noqa: BLE001 - a summary must never break the list
+        return ""
+
+
+def _artifact_rows(workspace_id):
+    arts = (Artifact.query.filter_by(workspace_id=workspace_id)
+            .order_by(Artifact.created_at.desc()).all())
+    return [{"id": a.id, "kind": a.kind, "name": a.name, "created_at": a.created_at,
+             "summary": _artifact_summary(a)} for a in arts]
+
+
+@ws_bp.route("/<int:workspace_id>/artifacts/<int:artifact_id>")
+@login_required
+def artifact_detail(workspace_id, artifact_id):
+    ws = _get_member_workspace(workspace_id)
+    art = db.session.get(Artifact, artifact_id)
+    if art is None or art.workspace_id != ws.id:
+        abort(404)
+    creator = db.session.get(User, art.created_by) if art.created_by else None
+    return render_template("workspaces/artifact.html", ws=ws, art=art, creator=creator,
+                           plugin=get_parser(art.kind))
 
 
 @ws_bp.route("/<int:workspace_id>/artifacts/<int:artifact_id>/delete", methods=["POST"])

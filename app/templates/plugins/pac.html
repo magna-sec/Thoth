@@ -1,0 +1,33 @@
+{# Renders a parsed PAC artifact. Context: `art`, `d` (art.data_json). #}
+<div class="stat-strip">
+  <div class="stat"><div class="stat-num">{{ d.proxies|length }}</div><div class="stat-label">Proxies</div></div>
+  <div class="stat"><div class="stat-num">{{ d.direct_patterns|length }}</div><div class="stat-label">DIRECT (bypass)</div></div>
+  <div class="stat"><div class="stat-num">{{ d.subnets|length }}</div><div class="stat-label">Subnets</div></div>
+  <div class="stat"><div class="stat-num">{{ d.domains|length }}</div><div class="stat-label">Patterns</div></div>
+  <div class="stat"><div class="stat-num">{{ d.proxy_returns }}/{{ d.direct_returns }}</div><div class="stat-label">PROXY / DIRECT returns</div></div>
+</div>
+
+<div class="card">
+  <h2>Proxy servers</h2>
+  {% if d.proxies %}<div class="fp-row">{% for p in d.proxies %}<span class="chip sensitive mono">{{ p }}</span>{% endfor %}</div>
+  {% else %}<p class="muted">None found.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Bypasses the proxy — DIRECT <span class="muted">({{ d.direct_patterns|length }})</span></h2>
+  <p class="muted" style="font-size:12px; margin-top:-4px">The internal estate that connects directly, without the proxy — the recon-valuable part.</p>
+  {% if d.direct_patterns %}<div class="fp-row">{% for p in d.direct_patterns %}<span class="chip tech mono sensitive">{{ p }}</span>{% endfor %}</div>
+  {% else %}<p class="muted">None detected.</p>{% endif %}
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Subnets <span class="muted">({{ d.subnets|length }})</span></h2>
+    {% if d.subnets %}<div class="fp-row">{% for s in d.subnets %}<span class="chip mono sensitive">{{ s }}</span>{% endfor %}</div>{% else %}<p class="muted">None.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>All host / domain patterns <span class="muted">({{ d.domains|length }})</span></h2>
+    {% if d.domains %}<div class="fp-row">{% for x in d.domains %}<span class="chip mono sensitive">{{ x }}</span>{% endfor %}</div>{% else %}<p class="muted">None.</p>{% endif %}
+    <p class="muted" style="font-size:12px; margin-top:10px">Helpers used: {{ d.helpers | join(', ') or '—' }}</p>
+  </div>
+</div>

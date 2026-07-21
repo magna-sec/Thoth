@@ -23,13 +23,15 @@ def create_app(config_object=Config):
     init_celery(app)
 
     from . import models  # noqa: F401  (register models)
-    from . import modules  # noqa: F401  (trigger module registration)
+    from . import modules  # noqa: F401  (trigger module-plugin registration)
+    from . import plugins  # noqa: F401  (trigger parser-plugin registration)
 
     @login_manager.user_loader
     def load_user(user_id):
         return db.session.get(models.User, int(user_id))
 
     from .auth.routes import auth_bp
+    from .plugins.routes import plugins_bp
     from .runs.routes import runs_bp
     from .signatures.routes import sigs_bp
     from .workspaces.routes import ws_bp
@@ -38,6 +40,7 @@ def create_app(config_object=Config):
     app.register_blueprint(ws_bp)
     app.register_blueprint(runs_bp)
     app.register_blueprint(sigs_bp)
+    app.register_blueprint(plugins_bp)
 
     from .cli import register_cli
     register_cli(app)

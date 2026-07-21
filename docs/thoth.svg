@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200" role="img" aria-label="Thoth">
+  <rect width="640" height="200" rx="18" fill="#17120c"/>
+  <!-- emblem: ibis (Thoth's sacred bird) before the moon he governs -->
+  <g transform="translate(100 100)">
+    <circle r="78" fill="#241c12" stroke="#5c4523" stroke-width="2"/>
+    <!-- crescent moon, set behind and to the right -->
+    <path d="M44 -42a44 44 0 1 0 0 84 34 34 0 1 1 0-84z" fill="#e8b23c" opacity="0.88"/>
+    <!-- ibis in profile: body, slender neck, round head, long decurved bill, legs -->
+    <g fill="#f3e3c3">
+      <path d="M32 24 C48 10 40 -14 10 -14 C-2 -15 -8 -22 -10 -30 L0 -32
+               C4 -16 20 -14 30 -10 C46 -2 42 22 26 30 Z"/>
+      <circle cx="-12" cy="-31" r="9.5"/>
+      <path d="M-18 -31 Q-44 -23 -54 6 Q-47 -3 -36 -8 Q-25 -19 -13 -25 Z"/>
+      <path d="M16 26 L14 52 M28 24 L30 50" stroke="#f3e3c3" stroke-width="3.4"
+            fill="none" stroke-linecap="round"/>
+    </g>
+    <circle cx="-14" cy="-33" r="2.6" fill="#241c12"/>
+  </g>
+  <!-- wordmark -->
+  <text x="210" y="108" font-family="Georgia, 'Times New Roman', serif" font-size="72" fill="#f3e3c3" font-weight="700">Thoth</text>
+  <text x="212" y="140" font-family="ui-sans-serif, Segoe UI, sans-serif" font-size="18" fill="#a8916a" letter-spacing="3">CYBER ENUMERATION PLATFORM</text>
+</svg>

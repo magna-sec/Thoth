@@ -29,6 +29,7 @@
       <nav class="topnav">
         {% if current_user.is_authenticated %}
           <a href="{{ url_for('workspaces.list_workspaces') }}">Workspaces</a>
+          <a href="{{ url_for('plugins.catalog') }}">Plugins</a>
           <a href="{{ url_for('signatures.index') }}">Fingerprints</a>
           {% if current_user.is_admin %}<a href="{{ url_for('auth.users') }}">Users</a>{% endif %}
         {% endif %}

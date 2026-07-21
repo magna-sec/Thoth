@@ -1,0 +1,28 @@
+{# Renders a parsed dsregcmd artifact. Context: `art`, `d` (art.data_json). #}
+{% if d.summary %}
+<div class="stat-strip" style="flex-wrap:wrap">
+  {% for s in d.summary %}
+  <div class="stat" style="min-width:150px">
+    <div class="stat-num" style="font-size:16px">
+      {% if s.bool is sameas true %}<span style="color:var(--accent)">YES</span>
+      {% elif s.bool is sameas false %}<span class="muted">NO</span>
+      {% else %}<span class="sensitive" style="font-size:13px; word-break:break-all">{{ s.value or '—' }}</span>{% endif %}
+    </div>
+    <div class="stat-label">{{ s.key }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+<div class="artifact-grid">
+  {% for sec in d.sections %}
+  <div class="artifact-sec">
+    <h3>{{ sec.title }}</h3>
+    <table class="kv"><tbody>
+      {% for it in sec['items'] %}
+      <tr><td class="k">{{ it.key }}</td><td class="v mono sensitive">{{ it.value or '—' }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+    {% if sec.notes %}<p class="muted mono" style="font-size:11px; margin:6px 0 0">{{ sec.notes | join(' · ') }}</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>

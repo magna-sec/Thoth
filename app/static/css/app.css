@@ -159,6 +159,15 @@ a.dc-host:hover { color: var(--accent); }
 .fz-item input { width: auto; }
 .row-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
 
+/* Artifact key/value tables (dsregcmd sections). */
+.kv { width: 100%; border-collapse: collapse; }
+.kv td { padding: 3px 8px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 13px; }
+.kv td.k { color: var(--muted); white-space: nowrap; width: 42%; }
+.kv td.v { word-break: break-all; }
+.artifact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; align-items: start; }
+.artifact-sec { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--panel-2); }
+.artifact-sec h3 { margin: 0 0 6px; font-size: 14px; }
+
 /* Severity chips for tool findings (nuclei, iistilde). */
 .chip.sev-critical { background: color-mix(in srgb, var(--err) 32%, transparent); color: var(--err); border-color: var(--err); font-weight: 700; }
 .chip.sev-high { background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); border-color: transparent; }

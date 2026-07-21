@@ -102,13 +102,16 @@ def test_pac_detection_and_rejection():
         parse_pac("this is definitely not a pac file")
 
 
-def test_add_dsregcmd_artifact_route_autodetects(client, app, workspace):
-    client.post(f"/workspaces/{workspace}/artifacts",
-                data={"content": DSREGCMD, "kind": "auto"}, follow_redirects=True)
+def test_add_dsregcmd_artifact_route_autodetects_and_opens_it(client, app, workspace):
+    # Saving redirects straight to the artifact's own page (follow it and check content).
+    page = client.post(f"/workspaces/{workspace}/artifacts",
+                       data={"content": DSREGCMD, "kind": "auto"},
+                       follow_redirects=True).data.decode()
     with app.app_context():
         art = Artifact.query.filter_by(workspace_id=workspace).one()
         assert art.kind == "dsregcmd"
         assert art.data_json["summary"][0]["key"] == "AzureAdJoined"
+    assert "Contoso Ltd" in page                 # landed on the parsed view
 
 
 def test_add_pac_artifact_via_upload(client, app, workspace):
@@ -130,23 +133,48 @@ def test_undetectable_content_is_rejected(client, app, workspace):
         assert Artifact.query.filter_by(workspace_id=workspace).count() == 0
 
 
-def test_artifacts_render_and_delete(client, app, workspace):
+def test_workspace_lists_artifacts_and_detail_pages_render(client, app, workspace):
     client.post(f"/workspaces/{workspace}/artifacts",
-                data={"content": DSREGCMD, "kind": "dsregcmd"}, follow_redirects=True)
+                data={"content": DSREGCMD, "kind": "dsregcmd", "name": "laptop"},
+                follow_redirects=True)
     client.post(f"/workspaces/{workspace}/artifacts",
-                data={"content": PAC, "kind": "pac"}, follow_redirects=True)
+                data={"content": PAC, "kind": "pac", "name": "corp.pac"},
+                follow_redirects=True)
 
+    # The workspace page LISTS them (compact) on the tab and Overview, not the full dump.
     page = client.get(f"/workspaces/{workspace}").data.decode()
     assert 'data-pane="artifacts"' in page
-    assert "Contoso Ltd" in page                       # dsregcmd tenant rendered
-    assert "defaultproxy.contoso.com:3128" in page      # pac proxy rendered
-    assert "intranet.contoso.com" in page               # DIRECT footprint rendered
+    assert "laptop" in page and "corp.pac" in page
+    assert "Recon artifacts" in page                    # Overview card
+    assert "artifact-grid" not in page                  # the full render is NOT dumped here
+    assert "defaultproxy.contoso.com:3128" not in page  # proxies only on the detail page
 
     with app.app_context():
-        aid = Artifact.query.filter_by(kind="pac", workspace_id=workspace).one().id
-    client.post(f"/workspaces/{workspace}/artifacts/{aid}/delete", follow_redirects=True)
+        arts = {a.kind: a.id for a in Artifact.query.filter_by(workspace_id=workspace).all()}
+
+    ds = client.get(f"/workspaces/{workspace}/artifacts/{arts['dsregcmd']}").data.decode()
+    assert "Contoso Ltd" in ds and "AzureAdJoined" in ds
+    pac = client.get(f"/workspaces/{workspace}/artifacts/{arts['pac']}").data.decode()
+    assert "defaultproxy.contoso.com:3128" in pac       # proxy
+    assert "intranet.contoso.com" in pac                # DIRECT footprint
+
+    client.post(f"/workspaces/{workspace}/artifacts/{arts['pac']}/delete",
+                follow_redirects=True)
     with app.app_context():
         assert Artifact.query.filter_by(workspace_id=workspace).count() == 1
+
+
+def test_artifact_detail_404_for_other_workspace(client, app, workspace):
+    from app.models import Workspace
+    with app.app_context():
+        other = Workspace(name="Other")
+        db.session.add(other)
+        db.session.flush()
+        art = Artifact(workspace_id=other.id, kind="pac", data_json={})
+        db.session.add(art)
+        db.session.commit()
+        aid = art.id
+    assert client.get(f"/workspaces/{workspace}/artifacts/{aid}").status_code == 404
 
 
 def test_artifacts_wiped_with_workspace(client, app, workspace):

@@ -1,8 +1,17 @@
+<p align="center">
+  <img src="docs/thoth.svg" alt="Thoth — cyber enumeration platform" width="560">
+</p>
+
 # Thoth
 
-A modular, multiplayer **website / subdomain enumeration** platform. Organise targets into
-per-client **workspaces**, run pluggable modules against them, and share results live. Its
-directory fuzzer follows [**dirsearch**](https://github.com/maurosoria/dirsearch)
+A modular, multiplayer **cyber enumeration platform**. Organise engagements into per-client
+**workspaces**, then plug in **capabilities**: *modules* that run against targets (subdomain
+discovery, liveness, directory fuzzing, screenshots, IIS short-name enumeration…) and
+*parsers* that ingest artifacts you already have (PAC files, `dsregcmd /status`…). Everything
+auto-registers — drop a file in and it appears. Subdomain enumeration is the core; the
+platform grows around it. See the [Plugins](#plugins) catalogue.
+
+Its directory fuzzer follows [**dirsearch**](https://github.com/maurosoria/dirsearch)
 (uses its `dicc.txt` and conventions), and a **dedup ledger** means the same path is never
 re-fuzzed twice — no duplicated work between runs or teammates.
 
@@ -149,10 +158,27 @@ Read-only and bounded by a per-host request budget; skips non-IIS hosts unless f
 stoppable mid-run (findings so far are kept); governed by the [engagement scope](#scope).
 **For authorized testing only.**
 
+## Plugins
+
+Thoth is plug-and-play: every capability is a plugin that **auto-registers at startup**, so
+adding one is a one-file change and it appears throughout the UI. The **Plugins** page
+(top nav) is the live catalogue. Two kinds:
+
+- **Modules** — run against a workspace's targets and produce findings. `alive`, `dnsbrute`,
+  `dirsearch`, `screenshot`, `iistilde`. Drop `app/modules/yours.py` with a `@register`
+  class extending `Module`.
+- **Parsers** — ingest an artifact you already have, parse it, and render it. `pac`,
+  `dsregcmd`. Drop `app/plugins/yours_plugin.py` with a `@register_parser` class extending
+  `ParserPlugin` (a `detect()`, a `parse()`, and a render partial under
+  `templates/plugins/`).
+
+No registry edits, no route wiring — the framework discovers it. The upload picker,
+auto-detect, the catalogue, and per-artifact rendering all populate from the registry.
+
 ## Recon artifacts
 
-The **Artifacts** tab parses two Windows/network recon outputs into a tidy view — nothing is
-executed, it's pure text parsing:
+The **Artifacts** tab (per workspace) ingests recon outputs through parser plugins into a
+tidy, per-artifact view — nothing is executed, it's pure text parsing:
 
 - **`dsregcmd /status`** — a device's Entra ID (Azure AD) / domain join state. The boxed
   sections become tables, with a summary strip up top (AzureAdJoined, DomainJoined, tenant

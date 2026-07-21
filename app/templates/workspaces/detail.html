@@ -2,6 +2,24 @@
 {% block title %}{{ ws.name }} · Thoth{% endblock %}
 {% block content %}
 {% from "_exporter.html" import exporter with context %}
+{% macro artifact_list(rows, limit=0) %}
+<table class="data">
+  <thead><tr><th>Type</th><th>Name</th><th>Summary</th><th>When</th><th></th></tr></thead>
+  <tbody>
+    {% for a in (rows[:limit] if limit else rows) %}
+    <tr>
+      <td><span class="chip {{ 'tech' if a.kind == 'dsregcmd' else '' }}">{{ 'dsregcmd' if a.kind == 'dsregcmd' else 'PAC' }}</span></td>
+      <td class="sensitive"><a href="{{ url_for('workspaces.artifact_detail', workspace_id=ws.id, artifact_id=a.id) }}">{{ a.name or ('device status' if a.kind == 'dsregcmd' else 'proxy.pac') }}</a></td>
+      <td class="muted sensitive" style="font-size:12px">{{ a.summary }}</td>
+      <td class="muted" style="white-space:nowrap">{{ a.created_at.strftime("%m-%d %H:%M") }}</td>
+      <td><a class="btn small" href="{{ url_for('workspaces.artifact_detail', workspace_id=ws.id, artifact_id=a.id) }}">View</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">No artifacts yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
 <div class="page-head">
   <h1 class="sensitive">{{ ws.name }}</h1>
   <span class="muted sensitive">{{ ws.client or "" }}</span>
@@ -64,6 +82,15 @@
       </table>
     </div>
   </div>
+  {% if artifact_rows %}
+  <div class="card">
+    <div class="table-toolbar">
+      <h2>Recon artifacts <span class="muted">({{ artifact_rows|length }})</span></h2>
+      <button class="btn small tab-jump" data-goto="artifacts" type="button">Manage</button>
+    </div>
+    {{ artifact_list(artifact_rows, limit=5) }}
+  </div>
+  {% endif %}
 </section>
 
 <!-- RESULTS (findings) -->
@@ -598,23 +625,22 @@
 <!-- ARTIFACTS (dsregcmd / PAC) -->
 <section class="tabpane" data-pane="artifacts" id="artifacts">
   <div class="card">
-    <h2>Recon artifacts <span class="muted">— dsregcmd status &amp; PAC files</span></h2>
+    <h2>Add a recon artifact <span class="muted">— via a parser plugin</span></h2>
     <p class="muted" style="font-size:12px">
-      Paste <span class="mono">dsregcmd /status</span> output (Windows device / Entra ID
-      join state) or a <span class="mono">.pac</span> proxy-auto-config file. Thoth parses
-      it into a readable view — for a PAC, the proxies and the internal estate that bypasses
-      them (DIRECT); for dsregcmd, the join/tenant/SSO state. Nothing is executed.
+      Paste or upload something a parser plugin understands
+      ({% for p in parsers.values() %}<span class="mono">{{ p.title }}</span>{{ ", " if not loop.last }}{% endfor %});
+      Thoth parses it into a readable view and saves it here. Nothing is executed.
+      <a href="{{ url_for('plugins.catalog') }}">See all plugins →</a>
     </p>
     <form method="post" enctype="multipart/form-data"
           action="{{ url_for('workspaces.add_artifact', workspace_id=ws.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <textarea name="content" rows="6" class="mono" style="width:100%"
-                placeholder="Paste dsregcmd /status output, or the contents of a proxy.pac…"></textarea>
+      <textarea name="content" rows="5" class="mono" style="width:100%"
+                placeholder="Paste the artifact contents…"></textarea>
       <div class="note-form" style="margin-top:8px">
         <select name="kind">
           <option value="auto">Auto-detect</option>
-          <option value="dsregcmd">dsregcmd status</option>
-          <option value="pac">PAC file</option>
+          {% for p in parsers.values() %}<option value="{{ p.name }}">{{ p.title }}</option>{% endfor %}
         </select>
         <input name="name" placeholder="label (optional)" style="width:160px">
         <input type="file" name="file">
@@ -623,80 +649,10 @@
     </form>
   </div>
 
-  {% for a in artifacts %}
   <div class="card">
-    <div class="table-toolbar">
-      <h2>
-        {% if a.kind == "dsregcmd" %}Device / Entra ID state{% else %}PAC file{% endif %}
-        {% if a.name %}<span class="muted sensitive">— {{ a.name }}</span>{% endif %}
-        <span class="muted" style="font-size:12px">· {{ a.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
-      </h2>
-      <form method="post" action="{{ url_for('workspaces.delete_artifact', workspace_id=ws.id, artifact_id=a.id) }}" style="margin:0"
-            onsubmit="return confirm('Remove this artifact?')">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn small danger-btn" type="submit">Remove</button>
-      </form>
-    </div>
-
-    {% if a.kind == "dsregcmd" %}
-      {% set d = a.data_json %}
-      {% if d.summary %}
-      <div class="fp-row" style="margin-bottom:10px">
-        {% for s in d.summary %}
-        <span class="chip {{ 'tech' if (s.bool is sameas true and s.key in ('AzureAdJoined','DomainJoined','EnterpriseJoined','WorkplaceJoined','AzureAdPrt')) else '' }}"
-              title="{{ s.key }}">
-          {{ s.key }}:
-          {% if s.bool is sameas true %}YES{% elif s.bool is sameas false %}NO{% else %}<span class="sensitive">{{ s.value or '—' }}</span>{% endif %}
-        </span>
-        {% endfor %}
-      </div>
-      {% endif %}
-      <div class="grid-2">
-      {% for sec in d.sections %}
-        <div>
-          <h3 style="margin:8px 0 4px">{{ sec.title }}</h3>
-          <table class="data"><tbody>
-            {% for it in sec['items'] %}
-            <tr><td class="muted" style="white-space:nowrap">{{ it.key }}</td>
-                <td class="mono sensitive" style="word-break:break-all">{{ it.value or '—' }}</td></tr>
-            {% endfor %}
-          </tbody></table>
-          {% if sec.notes %}<p class="muted mono" style="font-size:11px">{{ sec.notes | join(' · ') }}</p>{% endif %}
-        </div>
-      {% endfor %}
-      </div>
-    {% else %}
-      {% set d = a.data_json %}
-      <div class="grid-2">
-        <div>
-          <h3 style="margin:8px 0 4px">Proxies <span class="muted">({{ d.proxies|length }})</span></h3>
-          {% if d.proxies %}
-            <div class="fp-row">{% for p in d.proxies %}<span class="chip sensitive mono">{{ p }}</span>{% endfor %}</div>
-          {% else %}<p class="muted">None found.</p>{% endif %}
-          <h3 style="margin:14px 0 4px">Bypasses proxy — DIRECT <span class="muted">({{ d.direct_patterns|length }})</span></h3>
-          <p class="muted" style="font-size:12px; margin-top:-2px">The internal estate that connects directly — recon gold.</p>
-          {% if d.direct_patterns %}
-            <div class="fp-row">{% for p in d.direct_patterns %}<span class="chip tech mono sensitive">{{ p }}</span>{% endfor %}</div>
-          {% else %}<p class="muted">None detected.</p>{% endif %}
-        </div>
-        <div>
-          <h3 style="margin:8px 0 4px">Subnets <span class="muted">({{ d.subnets|length }})</span></h3>
-          {% if d.subnets %}<div class="fp-row">{% for s in d.subnets %}<span class="chip mono sensitive">{{ s }}</span>{% endfor %}</div>{% else %}<p class="muted">None.</p>{% endif %}
-          <h3 style="margin:14px 0 4px">All host / domain patterns <span class="muted">({{ d.domains|length }})</span></h3>
-          {% if d.domains %}<div class="fp-row">{% for x in d.domains %}<span class="chip mono sensitive">{{ x }}</span>{% endfor %}</div>{% else %}<p class="muted">None.</p>{% endif %}
-          <p class="muted" style="font-size:12px; margin-top:10px">
-            {{ d.proxy_returns }} PROXY vs {{ d.direct_returns }} DIRECT return(s) ·
-            helpers: {{ d.helpers | join(', ') or '—' }}
-          </p>
-        </div>
-      </div>
-    {% endif %}
-    <details style="margin-top:8px"><summary class="muted" style="font-size:12px; cursor:pointer">Raw</summary>
-      <pre class="console" style="max-height:280px">{{ a.raw }}</pre></details>
+    <h2>Saved artifacts <span class="muted">({{ artifact_rows|length }})</span></h2>
+    {{ artifact_list(artifact_rows) }}
   </div>
-  {% else %}
-  <div class="card"><p class="muted">No artifacts yet. Paste a dsregcmd status or a PAC file above.</p></div>
-  {% endfor %}
 </section>
 
 <!-- DANGER / WIPE (admin only) -->

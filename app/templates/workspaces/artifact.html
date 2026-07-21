@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ art.name or art.kind }} · Thoth{% endblock %}
+{% block content %}
+<div class="page-head">
+  <a href="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#artifacts" class="muted">← {{ ws.name }} · artifacts</a>
+</div>
+<div class="page-head">
+  <h1>{{ plugin.title if plugin else art.kind }}</h1>
+  {% if art.name %}<span class="muted sensitive mono">{{ art.name }}</span>{% endif %}
+  <span class="muted">· {{ art.created_at.strftime("%Y-%m-%d %H:%M") }}{% if creator %} · {{ creator.email }}{% endif %}</span>
+  <form method="post" action="{{ url_for('workspaces.delete_artifact', workspace_id=ws.id, artifact_id=art.id) }}"
+        style="margin:0 0 0 auto" onsubmit="return confirm('Remove this artifact?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn small danger-btn" type="submit">Remove</button>
+  </form>
+</div>
+
+{% set d = art.data_json %}
+{# Each parser plugin ships its own render partial — the platform doesn't hard-code any. #}
+{% if plugin and plugin.partial %}
+  {% include plugin.partial %}
+{% else %}
+  <div class="card"><p class="muted">No renderer for '{{ art.kind }}'. Raw source below.</p></div>
+{% endif %}
+
+<div class="card">
+  <details><summary class="muted" style="cursor:pointer">Raw source</summary>
+    <pre class="console" style="max-height:420px">{{ art.raw }}</pre></details>
+</div>
+{% endblock %}

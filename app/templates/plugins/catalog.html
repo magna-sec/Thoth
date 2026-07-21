@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Plugins · Thoth{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Plugins</h1>
+  <span class="muted">{{ modules|length }} module(s) · {{ parsers|length }} parser(s)</span>
+</div>
+<p class="muted" style="font-size:13px; max-width:70ch">
+  Thoth is a plug-and-play cyber enumeration platform. Capabilities are plugins that
+  auto-register at startup — drop a file in and it appears here. Two kinds:
+  <strong>modules</strong> run against a workspace's targets and produce findings;
+  <strong>parsers</strong> ingest artifacts you already have and render them tidily.
+</p>
+
+<div class="card">
+  <h2>Modules <span class="muted">— run against targets</span></h2>
+  <table class="data">
+    <thead><tr><th>Name</th><th>Does</th><th>Scope</th><th>v</th></tr></thead>
+    <tbody>
+      {% for m in modules %}
+      <tr>
+        <td><span class="chip tech mono">{{ m.name }}</span></td>
+        <td>{{ m.description }}</td>
+        <td class="muted">
+          {%- if not m.needs_targets %}discovery (creates targets)
+          {%- elif m.supports_batch %}all targets at once
+          {%- else %}per target{% endif -%}
+        </td>
+        <td class="muted mono">{{ m.version }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Parsers <span class="muted">— ingest &amp; display artifacts</span></h2>
+  <table class="data">
+    <thead><tr><th>Name</th><th>Handles</th></tr></thead>
+    <tbody>
+      {% for p in parsers %}
+      <tr>
+        <td><span class="chip mono">{{ p.name }}</span> <span class="sensitive">{{ p.title }}</span></td>
+        <td>{{ p.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Write a plugin</h2>
+  <p class="muted" style="font-size:13px; max-width:80ch">
+    A <strong>module</strong>: drop <span class="mono">app/modules/yourmodule.py</span> with a
+    <span class="mono">@register</span> class extending <span class="mono">Module</span>.
+    A <strong>parser</strong>: drop <span class="mono">app/plugins/your_plugin.py</span> with a
+    <span class="mono">@register_parser</span> class extending
+    <span class="mono">ParserPlugin</span> (a <span class="mono">detect()</span>,
+    <span class="mono">parse()</span> and a render partial). No other file changes — it
+    registers itself and shows up throughout the UI.
+  </p>
+</div>
+{% endblock %}
