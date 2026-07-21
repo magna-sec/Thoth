@@ -254,6 +254,28 @@
     </form>
   </div>
 
+  <div class="card" id="nuclei">
+    <h2>Import nuclei results</h2>
+    <p class="muted" style="font-size:12px">
+      Run <span class="mono">nuclei -jsonl</span> (or <span class="mono">-json</span>) out
+      of band and paste or upload it here. Each finding is matched to its subdomain by host.
+      Tick specific subdomains below to restrict the import to them; leave all unticked to
+      match across the whole workspace. Findings for hosts that aren't subdomains here are
+      reported, not invented.
+    </p>
+    <form id="nuclei-form" method="post" enctype="multipart/form-data"
+          action="{{ url_for('workspaces.import_nuclei', workspace_id=ws.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="results" rows="6" class="mono" style="width:100%"
+                placeholder='{"template-id":"...","info":{"name":"...","severity":"high"},"host":"https://api.example.com","matched-at":"https://api.example.com/x"}'></textarea>
+      <div class="note-form" style="margin-top:8px">
+        <input type="file" name="file" multiple>
+        <span class="muted" id="nuclei-scope" style="font-size:12px">matching across all subdomains</span>
+        <button class="btn primary" type="submit">Import nuclei</button>
+      </div>
+    </form>
+  </div>
+
   <div class="table-toolbar">
     <h2>Subdomains (<span id="domain-count">{{ domains|length }}</span>/{{ domains|length }})</h2>
     <div class="domain-filters">
@@ -291,15 +313,37 @@
       </form>
     </div>
   </div>
+
+  {# Bulk selection: cards carry a .dc-check box; these actions gather the checked ids and
+     POST to runs.start (or scope the nuclei import). Driven in JS so we avoid nesting the
+     grid inside a form alongside the per-card "Check live" / "Check all" forms. #}
+  <div class="bulk-bar" id="bulk-bar" data-run-url="{{ url_for('runs.start') }}" data-ws="{{ ws.id }}">
+    <label class="ctl"><input type="checkbox" id="bulk-all-visible"> Select shown</label>
+    <button class="btn small" type="button" id="bulk-alive-sel">Select alive</button>
+    <button class="btn small" type="button" id="bulk-iis-sel" title="Select hosts fingerprinted as IIS">Select IIS</button>
+    <button class="btn small" type="button" id="bulk-clear">Clear</button>
+    <span class="muted" id="bulk-count">0 selected</span>
+    <span class="bulk-actions" hidden id="bulk-actions">
+      <span class="muted">→ run on selected:</span>
+      <button class="btn small" type="button" data-bulk-module="alive">Alive</button>
+      <button class="btn small" type="button" data-bulk-module="screenshot" data-bulk-force="1">Screenshot</button>
+      <button class="btn small" type="button" data-bulk-module="iistilde" title="IIS 8.3 short-name enumeration check">IIS tilde</button>
+      <button class="btn small" type="button" data-bulk-module="dirsearch">Fuzz</button>
+      <button class="btn small" type="button" id="bulk-nuclei">Nuclei import ↑</button>
+    </span>
+  </div>
+
   <div class="domain-grid">
     {% for t in domains %}
     <div class="domain-card status-{{ 'na' if t.last_alive is none else ('up' if t.last_alive else 'down') }}"
          data-tid="{{ t.id }}" data-host="{{ t.host }}"
+         data-iis="{{ '1' if (('iis' in (t.last_server or '').lower()) or ('iis' in (t.last_tech or '').lower())) else '0' }}"
          data-live="{{ 'na' if t.last_alive is none else ('up' if t.last_alive else 'down') }}"
          data-code="{{ t.last_status_code if t.last_status_code is not none else '' }}"
          data-ports="{{ t.open_port_list | join(',') }}"
          data-scope="{{ '0' if t.host in scope_out else '1' }}">
       <div class="dc-head">
+        <input type="checkbox" class="dc-check" value="{{ t.id }}" title="Select for a bulk action">
         <a class="dc-host sensitive mono" href="{{ url_for('workspaces.domain_detail', workspace_id=ws.id, target_id=t.id) }}">{{ t.host }}</a>
         {% if t.last_alive is none %}
           <span class="dc-status badge unchecked">unchecked</span>
@@ -608,6 +652,7 @@
 <script src="{{ url_for('static', filename='js/results.js') }}"></script>
 <script src="{{ url_for('static', filename='js/fuzz.js') }}"></script>
 <script src="{{ url_for('static', filename='js/shots.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bulk.js') }}"></script>
 <script src="{{ url_for('static', filename='js/response.js') }}"></script>
 <script src="{{ url_for('static', filename='js/activity.js') }}"></script>
 {% endblock %}

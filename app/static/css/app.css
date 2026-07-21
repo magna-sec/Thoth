@@ -159,6 +159,19 @@ a.dc-host:hover { color: var(--accent); }
 .fz-item input { width: auto; }
 .row-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
 
+/* Bulk selection bar on the Subdomains tab. */
+.bulk-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; }
+.bulk-actions { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.dc-check { width: auto; margin: 0 2px 0 0; flex: none; }
+.domain-card.selected { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* Severity chips for tool findings (nuclei, iistilde). */
+.chip.sev-critical { background: color-mix(in srgb, var(--err) 32%, transparent); color: var(--err); border-color: var(--err); font-weight: 700; }
+.chip.sev-high { background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); border-color: transparent; }
+.chip.sev-medium { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); border-color: transparent; }
+.chip.sev-low { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); border-color: transparent; }
+.chip.sev-info, .chip.sev-unknown { background: var(--panel-2); color: var(--muted); }
+
 /* Exports — dataset label followed by its formats. */
 .export-bar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 10px 0 4px; padding-top: 10px; border-top: 1px solid var(--border); }
 .export-group { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; }

@@ -38,10 +38,31 @@
   {{ runbtn('alive', 'Run alive') }}
   {{ runbtn('dirsearch', 'Fuzz ▶', 'primary', 'Directory fuzzing on this subdomain (skips already-tested paths)') }}
   {{ runbtn('screenshot', 'Screenshot 📷️', '', 'Capture this site in a headless browser', true) }}
+  {% if is_iis %}
+  {# only_iis managed but left unticked, so it tests this host regardless of fingerprint. #}
+  <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+    <input type="hidden" name="target_id" value="{{ t.id }}">
+    <input type="hidden" name="module" value="iistilde">
+    <input type="hidden" name="cfg__bools" value="only_iis">
+    <button class="btn small" type="submit" title="Check for IIS 8.3 short-name (tilde) enumeration">IIS tilde ▶</button>
+  </form>
+  {% endif %}
   <details class="more-actions">
     <summary class="btn small">More ▾</summary>
     <div class="more-menu">
       {{ runbtn('dirsearch', 'Fuzz (force) ▶', '', 'Re-test every path, ignoring the dedup ledger', true) }}
+      {% if not is_iis %}
+      <form method="post" action="{{ url_for('runs.start') }}" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="workspace_id" value="{{ ws.id }}">
+        <input type="hidden" name="target_id" value="{{ t.id }}">
+        <input type="hidden" name="module" value="iistilde">
+        <input type="hidden" name="cfg__bools" value="only_iis">
+        <button class="btn small" type="submit" title="Run the IIS 8.3 short-name check anyway, even though this host wasn't fingerprinted as IIS">IIS tilde (force) ▶</button>
+      </form>
+      {% endif %}
       <form method="post" action="{{ url_for('workspaces.clear_ledger_domain', workspace_id=ws.id, target_id=t.id) }}" style="margin:0"
             onsubmit="return confirm('Clear the dedup ledger for {{ t.host }}? Future fuzzes will re-test everything.')">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -80,6 +101,28 @@
 
 <!-- OVERVIEW -->
 <section class="tabpane active" data-pane="overview">
+  {% if vulns %}
+  <div class="card">
+    <h2>Vulnerabilities <span class="muted">— {{ vulns|length }} from imported / tool findings</span></h2>
+    <table class="data">
+      <thead><tr><th>Severity</th><th>Finding</th><th>Path</th><th>Source</th></tr></thead>
+      <tbody>
+        {% for v in vulns %}
+        <tr>
+          <td><span class="chip sev-{{ v.severity }}">{{ v.severity }}</span></td>
+          <td class="sensitive">{{ v.name }}
+            {% if v.template_id %}<span class="muted mono" style="font-size:11px">{{ v.template_id }}</span>{% endif %}
+            {% for tag in v.tags[:5] %}<span class="chip" style="font-size:10px">{{ tag }}</span>{% endfor %}
+          </td>
+          <td class="mono sensitive">{% if v.matched_at %}<a href="{{ v.matched_at }}" target="_blank" rel="noopener">{{ v.path }}</a>{% else %}{{ v.path }}{% endif %}</td>
+          <td class="muted">{{ v.module.replace("-import", "") }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   {% if open_ports %}
   <div class="card">
     <h2>Open alt-HTTP ports <span class="muted">— found by the alive check</span></h2>
