@@ -16,6 +16,9 @@ Its directory fuzzer follows [**dirsearch**](https://github.com/maurosoria/dirse
 re-fuzzed twice — no duplicated work between runs or teammates.
 
 > For authorized security testing only. Only scan hosts you have permission to test.
+> Thoth only touches a target during an **explicit** run (alive, dnsbrute, dirsearch,
+> screenshot, iistilde) or the on-demand response viewer — browsing the UI, viewing a
+> subdomain, and every parser (PAC, dsregcmd, nmap, nuclei) make **no** outbound requests.
 
 ## Features
 
@@ -129,14 +132,15 @@ Four datasets × four formats, from the Results tab (whole workspace) or a subdo
 CSV/JSON/Markdown for humans and spreadsheets, TXT (tab-separated, or plain lines for
 `urls`/`params`) for pipes.
 
-## Nuclei import
+## Nuclei
 
-**Import nuclei results** (Subdomains tab) takes the output of a nuclei run — `nuclei
--jsonl` or `nuclei -json` — pasted or uploaded (several files at once is fine). Each finding
-is matched to its subdomain **by host**; findings for hosts that aren't subdomains in the
-workspace are reported, not invented. Imported findings carry their **severity** and show up
-as a ranked **Vulnerabilities** panel on the subdomain page (critical → info). Both nuclei
-field spellings (`template-id` / `templateID`, `matched-at` / `matched_at`) are understood.
+The **nuclei** parser plugin (add it from the **Artifacts** tab) takes the output of a nuclei
+run — `nuclei -jsonl` or `nuclei -json`, pasted or uploaded. Each finding is matched to its
+subdomain **by host**; findings for hosts that aren't subdomains in the workspace are
+reported, not invented. Matches carry their **severity** and show up as a ranked
+**Vulnerabilities** panel on the subdomain page (critical → info) — the results go straight
+onto the subdomains rather than being stored as a separate artifact. Both nuclei field
+spellings (`template-id` / `templateID`, `matched-at` / `matched_at`) are understood.
 
 ## IIS tilde enumeration
 
@@ -167,10 +171,12 @@ adding one is a one-file change and it appears throughout the UI. The **Plugins*
 - **Modules** — run against a workspace's targets and produce findings. `alive`, `dnsbrute`,
   `dirsearch`, `screenshot`, `iistilde`. Drop `app/modules/yours.py` with a `@register`
   class extending `Module`.
-- **Parsers** — ingest an artifact you already have, parse it, and render it. `pac`,
-  `dsregcmd`, `nmap`. Drop `app/plugins/yours_plugin.py` with a `@register_parser` class
-  extending `ParserPlugin` (a `detect()`, a `parse()`, and a render partial under
-  `templates/plugins/`).
+- **Parsers** — ingest an artifact you already have and either render it (`pac`, `dsregcmd`,
+  `nmap`) or fold it onto the workspace's subdomains (`nuclei`, a `kind = "findings"` parser
+  that writes each finding to the matching host's Vulnerabilities panel). Drop
+  `app/plugins/yours_plugin.py` with a `@register_parser` class extending `ParserPlugin`
+  (a `detect()`, a `parse()`, and either a render partial under `templates/plugins/` or an
+  `ingest()`).
 
 No registry edits, no route wiring — the framework discovers it. The upload picker,
 auto-detect, the catalogue, and per-artifact rendering all populate from the registry.

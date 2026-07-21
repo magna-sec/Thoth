@@ -24,7 +24,8 @@
 {% endif %}
 
 <div class="card">
-  <h2>Rules <span class="muted">— in order; first match wins</span></h2>
+  <h2>Rules <span class="muted">— {{ d.rules|length }}, in order; first match wins</span></h2>
+  <div class="table-scroll">
   <table class="data">
     <thead><tr><th style="width:32px">#</th><th>If the host matches…</th><th>→</th><th>Action</th></tr></thead>
     <tbody>
@@ -48,26 +49,30 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Bypasses proxy — DIRECT <span class="muted">({{ d.direct_patterns|length }})</span></h2>
+  <p class="muted" style="font-size:12px; margin-top:-4px">The internal estate reached directly — recon-valuable.</p>
+  {{ chipcloud('pac-direct', d.direct_patterns, 'tech') }}
 </div>
 
 <div class="grid-2">
   <div class="card">
     <h2>Proxy servers <span class="muted">({{ d.proxies|length }})</span></h2>
-    {% if d.proxies %}<div class="fp-row">{% for p in d.proxies %}<span class="chip sensitive mono">{{ p }}</span>{% endfor %}</div>
-    {% else %}<p class="muted">None found.</p>{% endif %}
+    {{ chipcloud('pac-proxies', d.proxies) }}
   </div>
   <div class="card">
-    <h2>Bypasses proxy — DIRECT <span class="muted">({{ d.direct_patterns|length }})</span></h2>
-    <p class="muted" style="font-size:12px; margin-top:-4px">The internal estate reached directly — recon-valuable.</p>
-    {% if d.direct_patterns %}<div class="fp-row">{% for p in d.direct_patterns %}<span class="chip tech mono sensitive">{{ p }}</span>{% endfor %}</div>
-    {% else %}<p class="muted">None detected.</p>{% endif %}
+    <h2>Subnets <span class="muted">({{ d.subnets|length }})</span></h2>
+    {{ chipcloud('pac-subnets', d.subnets) }}
   </div>
 </div>
 
 <div class="grid-2">
   <div class="card">
-    <h2>Subnets <span class="muted">({{ d.subnets|length }})</span></h2>
-    {% if d.subnets %}<div class="fp-row">{% for s in d.subnets %}<span class="chip mono sensitive">{{ s }}</span>{% endfor %}</div>{% else %}<p class="muted">None.</p>{% endif %}
+    <h2>All host / domain patterns <span class="muted">({{ d.domains|length }})</span></h2>
+    {{ chipcloud('pac-domains', d.domains) }}
   </div>
   <div class="card">
     <h2>Helpers used</h2>

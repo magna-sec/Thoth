@@ -32,6 +32,10 @@ SUMMARY_FIELDS = [
     ("OsVersion", "OS Version"),
 ]
 SUMMARY_KEYS = [k for k, _ in SUMMARY_FIELDS]  # back-compat
+# Only these render as a Yes/No pill. Everything else shows its literal value — otherwise a
+# non-boolean field whose value happens to read "YES"/"NO" would flash a misleading pill.
+BOOL_KEYS = {"AzureAdJoined", "EnterpriseJoined", "DomainJoined", "WorkplaceJoined",
+             "AzureAdPrt", "TpmProtected"}
 _YESNO = {"yes": True, "no": False}
 
 
@@ -132,8 +136,9 @@ def parse_dsregcmd(text):
     for key, label in SUMMARY_FIELDS:
         if key.lower() in index:
             value = index[key.lower()]
+            is_bool = key in BOOL_KEYS
             summary.append({"key": key, "label": label, "value": value,
-                            "bool": _YESNO.get(value.strip().lower())})
+                            "bool": _YESNO.get(value.strip().lower()) if is_bool else None})
     return {"sections": sections, "summary": summary, **interpret(index)}
 
 

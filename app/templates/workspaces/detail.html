@@ -30,11 +30,11 @@
   <button class="tab active" data-tab="overview">Overview</button>
   <button class="tab" data-tab="findings">Results</button>
   <button class="tab" data-tab="analysis">Analysis</button>
+  <button class="tab" data-tab="artifacts">Artifacts{% if artifact_rows %} <span class="muted">{{ artifact_rows|length }}</span>{% endif %}</button>
   <button class="tab" data-tab="domains">Subdomains</button>
   {% if ws.plugin_enabled('screenshot') %}<button class="tab" data-tab="shots">Screenshots</button>{% endif %}
   {% if ws.plugin_enabled('dirsearch') %}<button class="tab" data-tab="fuzz">Directory Fuzzing</button>{% else %}<button class="tab" data-tab="fuzz">Settings</button>{% endif %}
   <button class="tab" data-tab="runs">Tasks</button>
-  <button class="tab" data-tab="artifacts">Artifacts{% if artifacts %} <span class="muted">{{ artifacts|length }}</span>{% endif %}</button>
   {% if current_user.is_admin %}<button class="tab danger-tab" data-tab="danger">Wipe</button>{% endif %}
 </div>
 
@@ -84,15 +84,20 @@
       </table>
     </div>
   </div>
-  {% if artifact_rows %}
   <div class="card">
     <div class="table-toolbar">
       <h2>Recon artifacts <span class="muted">({{ artifact_rows|length }})</span></h2>
-      <button class="btn small tab-jump" data-goto="artifacts" type="button">Manage</button>
+      <button class="btn small tab-jump" data-goto="artifacts" type="button">
+        {{ 'Manage' if artifact_rows else 'Add dsregcmd / PAC / nmap →' }}</button>
     </div>
-    {{ artifact_list(artifact_rows, limit=5) }}
+    {% if artifact_rows %}
+      {{ artifact_list(artifact_rows, limit=5) }}
+    {% else %}
+      <p class="muted">Paste <span class="mono">dsregcmd /status</span>, a PAC file or an
+        nmap scan in the <button class="btn small tab-jump" data-goto="artifacts" type="button">Artifacts</button>
+        tab — they're parsed into a readable view and saved here.</p>
+    {% endif %}
   </div>
-  {% endif %}
 </section>
 
 <!-- RESULTS (findings) -->
@@ -286,26 +291,17 @@
     </form>
   </div>
 
-  <div class="card" id="nuclei">
-    <h2>Import nuclei results</h2>
-    <p class="muted" style="font-size:12px">
-      Run <span class="mono">nuclei -jsonl</span> (or <span class="mono">-json</span>) out
-      of band and paste or upload it here (several files at once is fine). Each finding is
-      matched to its subdomain by host; findings for hosts that aren't subdomains here are
-      reported, not invented. Imported findings show as a severity-ranked
-      <strong>Vulnerabilities</strong> panel on the subdomain page.
+  {% if ws.plugin_enabled('nuclei') %}
+  <div class="card">
+    <p class="muted" style="font-size:13px; margin:0">
+      🧪 <strong>Have nuclei results?</strong> The <strong>nuclei</strong> parser matches
+      each finding to its subdomain by host and shows them in that host's Vulnerabilities
+      panel. Add them in the
+      <button class="btn small tab-jump" data-goto="artifacts" type="button">Artifacts</button>
+      tab.
     </p>
-    <form id="nuclei-form" method="post" enctype="multipart/form-data"
-          action="{{ url_for('workspaces.import_nuclei', workspace_id=ws.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <textarea name="results" rows="6" class="mono" style="width:100%"
-                placeholder='{"template-id":"...","info":{"name":"...","severity":"high"},"host":"https://api.example.com","matched-at":"https://api.example.com/x"}'></textarea>
-      <div class="note-form" style="margin-top:8px">
-        <input type="file" name="file" multiple>
-        <button class="btn primary" type="submit">Import nuclei</button>
-      </div>
-    </form>
   </div>
+  {% endif %}
 
   <div class="table-toolbar">
     <h2>Subdomains (<span id="domain-count">{{ domains|length }}</span>/{{ domains|length }})</h2>

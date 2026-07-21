@@ -132,6 +132,40 @@ def test_nothing_matched_is_reported(client, app, workspace):
     assert "No nuclei findings matched" in page
 
 
+def test_nuclei_is_a_findings_parser_plugin():
+    from app.plugins import get_parser
+    from app.nucleiparse import looks_like_nuclei
+    p = get_parser("nuclei")
+    assert p is not None and p.kind == "findings"
+    assert looks_like_nuclei(JSONL) and not looks_like_nuclei("just prose")
+
+
+def test_nuclei_via_artifacts_picker_creates_findings(client, app, workspace):
+    """The unified Artifacts picker routes nuclei to subdomain findings, not an Artifact."""
+    with app.app_context():
+        db.session.add(Target(workspace_id=workspace, host="api.acme.test", scheme="https"))
+        db.session.commit()
+    client.post(f"/workspaces/{workspace}/artifacts",
+                data={"content": JSONL, "kind": "auto"}, follow_redirects=True)
+    with app.app_context():
+        from app.models import Artifact
+        assert Artifact.query.filter_by(workspace_id=workspace).count() == 0   # not stored
+        run = Run.query.filter_by(workspace_id=workspace, module="nuclei-import").one()
+        hosts = {f.target.host for f in Finding.query.filter_by(run_id=run.id).all()}
+        assert hosts == {"api.acme.test"}   # www not a target here, so skipped
+
+
+def test_disabled_nuclei_rejected_in_picker(client, app, workspace):
+    from app.models import Workspace
+    with app.app_context():
+        db.session.get(Workspace, workspace).enabled_plugins = ["alive"]   # no nuclei
+        db.session.commit()
+    page = client.post(f"/workspaces/{workspace}/artifacts",
+                       data={"content": JSONL, "kind": "nuclei"},
+                       follow_redirects=True).data.decode()
+    assert "isn&#39;t enabled" in page or "isn't enabled" in page
+
+
 def test_vulns_surface_on_domain_page(client, app, workspace):
     with app.app_context():
         t = Target(workspace_id=workspace, host="api.acme.test", scheme="https")

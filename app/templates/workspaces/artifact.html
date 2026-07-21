@@ -1,5 +1,16 @@
 {% extends "base.html" %}
 {% block title %}{{ art.name or art.kind }} · Thoth{% endblock %}
+{# Bounded, filterable list for potentially-huge sets (e.g. a PAC's 300+ DIRECT hosts). #}
+{% macro chipcloud(cid, items, cls='') %}
+  {% if items|length > 12 %}
+  <input type="text" class="filter cloud-filter" data-cloud="{{ cid }}"
+         placeholder="Filter {{ items|length }}…" style="width:220px">
+  {% endif %}
+  <div class="chip-cloud" id="{{ cid }}">
+    {% for x in items %}<span class="chip {{ cls }} mono sensitive">{{ x }}</span>
+    {% else %}<span class="muted">None.</span>{% endfor %}
+  </div>
+{% endmacro %}
 {% block content %}
 <div class="page-head">
   <a href="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#artifacts" class="muted">← {{ ws.name }} · artifacts</a>
@@ -27,4 +38,7 @@
   <details><summary class="muted" style="cursor:pointer">Raw source</summary>
     <pre class="console" style="max-height:420px">{{ art.raw }}</pre></details>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/cloud.js') }}"></script>
 {% endblock %}

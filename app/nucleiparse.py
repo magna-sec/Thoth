@@ -81,6 +81,13 @@ def _one(obj):
     }
 
 
+def looks_like_nuclei(text):
+    """Cheap heuristic for auto-detect: nuclei JSON carries a template id + an info block."""
+    t = text or ""
+    return (('"template-id"' in t or '"templateID"' in t or '"template_id"' in t)
+            and '"info"' in t) or ('"matched-at"' in t and '"info"' in t)
+
+
 def parse_nuclei(text):
     """Parse nuclei JSONL or JSON.
 

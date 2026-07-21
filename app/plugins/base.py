@@ -51,6 +51,10 @@ class ParserPlugin(ABC):
     glyph: str = "🧩"             # catalogue icon (kept ASCII-safe elsewhere)
     placeholder: str = ""         # textarea hint
     partial: str = ""             # template partial that renders parsed data
+    # "artifact" — parse() output is stored as an Artifact and rendered via `partial`.
+    # "findings" — the plugin instead ingests into the workspace (Findings on targets) via
+    #   ingest(); nothing is stored as an Artifact. e.g. nuclei → subdomain vulnerabilities.
+    kind: str = "artifact"
 
     @abstractmethod
     def detect(self, text) -> bool:
@@ -63,3 +67,8 @@ class ParserPlugin(ABC):
     def summary(self, data) -> str:
         """One-line summary for the artifact list. Override for something useful."""
         return ""
+
+    def ingest(self, ws, data, user):
+        """For kind == "findings": write `data` into the workspace and return
+        ``{"message", "category", "redirect"}``. Unused for artifact plugins."""
+        raise NotImplementedError

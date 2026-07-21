@@ -159,6 +159,14 @@ a.dc-host:hover { color: var(--accent); }
 .fz-item input { width: auto; }
 .row-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
 
+/* Chip cloud: a bounded, scrollable, filterable box for large lists (PAC DIRECT, etc). */
+.chip-cloud { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.chip-cloud .chip[hidden] { display: none; }
+.cloud-filter { margin-bottom: 6px; }
+.table-scroll { max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.table-scroll table.data { margin: 0; }
+.table-scroll thead th { position: sticky; top: 0; background: var(--panel); }
+
 /* Plugin picker (create form + workspace settings). */
 .plugin-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 12px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
 .pp-item { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; }

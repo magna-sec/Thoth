@@ -2,8 +2,6 @@
 import json
 import re
 import shutil
-import socket
-import threading
 import time
 from collections import Counter
 from datetime import datetime
@@ -23,6 +21,7 @@ from ..extensions import db
 from ..importers import ImportError_, ledger_key, parse_dirsearch
 from ..nucleiparse import NucleiParseError, parse_nuclei
 from ..plugins import all_parsers, detect_parser, get_parser
+from ..plugins.nuclei_plugin import NUCLEI_IMPORT, ingest_nuclei
 from ..models import (Artifact, Finding, Note, Run, Target, TestedPath, User, Workspace,
                       WorkspaceMember)
 from ..modules import all_modules, get_module
@@ -36,7 +35,7 @@ from ..urlinsights import analyse as analyse_urls
 from ..urlinsights import build_tree
 
 DIRSEARCH_IMPORT = "dirsearch-import"  # Run.module for pasted results (not a live module)
-NUCLEI_IMPORT = "nuclei-import"
+# NUCLEI_IMPORT imported from the nuclei plugin (used by the domain vulns query).
 
 ws_bp = Blueprint("workspaces", __name__, url_prefix="/workspaces")
 
@@ -585,7 +584,10 @@ def domain_detail(workspace_id, target_id):
         alive_times = [f.found_at for f in findings if (f.extra_json or {}).get("alive")]
         last_live = max(alive_times) if alive_times else None
 
-    ips = _resolve_ips(t.host)
+    # Show the IP we already resolved during an alive/enrich run — do NOT resolve live on
+    # page load. Thoth must not touch the target (DNS or HTTP) except during an explicit
+    # scan; viewing a subdomain is passive.
+    ips = [t.ip] if t.ip else []
 
     # Shortlist the URLs worth a human's attention: anything taking a parameter, or whose
     # name hints at what it does. Redirect targets count too — they often carry the params.
@@ -635,23 +637,6 @@ def domain_detail(workspace_id, target_id):
                            tree=tree, tree_stats=tree_stats, vulns=vulns,
                            is_iis=(("iis" in (t.last_server or "").lower())
                                    or ("iis" in (t.last_tech or "").lower())))
-
-
-def _resolve_ips(host, timeout=3.0):
-    """Resolve current A/AAAA records for a host, bounded so a slow DNS server can't
-    hang the page load."""
-    out = []
-
-    def work():
-        try:
-            out.extend(sorted({info[4][0] for info in socket.getaddrinfo(host, None)}))
-        except OSError:
-            pass
-
-    th = threading.Thread(target=work, daemon=True)
-    th.start()
-    th.join(timeout)
-    return out
 
 
 @ws_bp.route("/<int:workspace_id>/domains/<int:target_id>/import-dirsearch",
@@ -769,6 +754,13 @@ def add_artifact(workspace_id):
         flash(str(e), "error")
         return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
 
+    # "findings" plugins (e.g. nuclei) fold results onto the subdomains instead of storing
+    # an artifact — dispatch to the plugin's own ingest + redirect.
+    if plugin.kind == "findings":
+        result = plugin.ingest(ws, data, current_user)
+        flash(result["message"], result.get("category", "info"))
+        return redirect(result["redirect"])
+
     art = Artifact(workspace_id=ws.id, kind=plugin.name, name=name, raw=raw[:200_000],
                    data_json=data, created_by=current_user.id)
     db.session.add(art)
@@ -844,75 +836,30 @@ def import_nuclei(workspace_id):
         flash(str(e), "error")
         return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#domains")
 
-    by_host = {t.host.lower(): t for t in ws.targets}
-    selected = set(request.form.getlist("target_ids", type=int))
-    if selected:
-        by_host = {h: t for h, t in by_host.items() if t.id in selected}
-
-    now = datetime.utcnow()
-    run = Run(workspace_id=ws.id, module=NUCLEI_IMPORT, status="done",
-              config_json={"_targets": sorted({t.id for t in by_host.values()}) or None,
-                           "source": ", ".join(names) if names else "pasted"},
-              created_by=current_user.id, started_at=now, finished_at=now)
-    db.session.add(run)
-    db.session.flush()
-
-    sev_counts = Counter()
-    unmatched = Counter()
-    hit_targets = set()
-    imported = 0
-    for row in rows:
-        target = by_host.get(row["host"])
-        if target is None:
-            unmatched[row["host"]] += 1
-            continue
-        sev_counts[row["severity"]] += 1
-        hit_targets.add(target.id)
-        imported += 1
-        db.session.add(Finding(
-            workspace_id=ws.id, run_id=run.id, target_id=target.id, path=row["path"],
-            status_code=None, found_at=now,
-            extra_json={"module": NUCLEI_IMPORT, "imported": True,
-                        "severity": row["severity"], "title": row["name"],
-                        "template_id": row["template_id"], "tags": row["tags"],
-                        "type": row["type"], "matched_at": row["matched_at"],
-                        "matcher_name": row["matcher_name"],
-                        "description": row["description"]}))
-
-    log = [f"Importing nuclei results into {ws.name}"
-           + (f" ({len(names)} file(s): {', '.join(names)})" if names else " (pasted)")]
-    for sev in ("critical", "high", "medium", "low", "info", "unknown"):
-        if sev_counts.get(sev):
-            log.append(f"  {sev:>8}: {sev_counts[sev]}")
-    if unmatched:
-        log.append("")
-        log.append(f"{sum(unmatched.values())} finding(s) skipped — host not "
-                   + ("in the selection" if selected else "a subdomain in this workspace")
-                   + ": " + ", ".join(sorted(unmatched)[:15]))
-    log.append("")
-    log.append(f"Import Completed — {imported} finding(s) across "
-               f"{len(hit_targets)} host(s)")
-    run.progress_done = run.progress_total = imported
-    run.log = "\n".join(f"{now:%H:%M:%S} {ln}" if ln else "" for ln in log) + "\n"
-    db.session.commit()
-    for f in Finding.query.filter_by(run_id=run.id).all():
-        publish(ws.id, {"type": "finding", "run_id": run.id, "finding": f.to_dict()})
-
-    if not imported:
-        flash("No nuclei findings matched a subdomain in this workspace"
-              + (" selection." if selected else ".")
-              + (f" Hosts in the file: {', '.join(sorted(hosts)[:10])}" if hosts else ""),
-              "error")
+    if not ws.plugin_enabled("nuclei"):
+        flash("The 'nuclei' plugin isn't enabled for this workspace.", "error")
         return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#domains")
 
-    summary = " · ".join(f"{sev_counts[s]} {s}" for s in
+    selected = set(request.form.getlist("target_ids", type=int))
+    res = ingest_nuclei(ws, rows, hosts, current_user, selected_ids=selected or None,
+                        source=", ".join(names) if names else "pasted")
+
+    if not res["imported"]:
+        flash("No nuclei findings matched a subdomain in this workspace"
+              + (" selection." if selected else ".")
+              + (f" Hosts in the file: {', '.join(res['hosts'][:10])}" if res["hosts"]
+                 else ""), "error")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#domains")
+
+    summary = " · ".join(f"{res['sev_counts'][s]} {s}" for s in
                          ("critical", "high", "medium", "low", "info", "unknown")
-                         if sev_counts.get(s))
-    msg = f"Imported {imported} nuclei finding(s) ({summary})."
-    if unmatched:
-        msg += f" {sum(unmatched.values())} skipped (host not matched)."
+                         if res["sev_counts"].get(s))
+    msg = f"Imported {res['imported']} nuclei finding(s) ({summary})."
+    if res["unmatched"]:
+        msg += f" {sum(res['unmatched'].values())} skipped (host not matched)."
     flash(msg, "info")
-    return redirect(url_for("workspaces.run_detail", workspace_id=ws.id, run_id=run.id))
+    return redirect(url_for("workspaces.run_detail", workspace_id=ws.id,
+                            run_id=res["run"].id))
 
 
 @ws_bp.route("/<int:workspace_id>/domains/<int:target_id>/fingerprint", methods=["POST"])
