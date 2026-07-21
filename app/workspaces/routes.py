@@ -734,23 +734,23 @@ def add_artifact(workspace_id):
         name = name or upload.filename
     if not raw.strip():
         flash("Paste some content or choose a file first.", "error")
-        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#plugins")
 
     kind = request.form.get("kind", "auto")
     plugin = detect_parser(raw) if kind == "auto" else get_parser(kind)
     if plugin is None:
         flash("Couldn't tell which plugin handles that — pick the type explicitly."
               if kind == "auto" else f"No plugin named '{kind}'.", "error")
-        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#plugins")
     if not ws.plugin_enabled(plugin.name):
         flash(f"The '{plugin.title}' parser isn't enabled for this workspace.", "error")
-        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#plugins")
 
     try:
         data = plugin.parse(raw)
     except ValueError as e:
         flash(str(e), "error")
-        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+        return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#plugins")
 
     # "findings" plugins (e.g. nuclei) fold results onto the subdomains instead of storing
     # an artifact — dispatch to the plugin's own ingest + redirect.
@@ -794,6 +794,13 @@ def artifact_detail(workspace_id, artifact_id):
     art = db.session.get(Artifact, artifact_id)
     if art is None or art.workspace_id != ws.id:
         abort(404)
+    # Backfill friendly labels for dsregcmd artifacts saved before the `label` field
+    # existed, so they render nicely instead of blank/raw. In-memory only, not persisted.
+    if art.kind == "dsregcmd" and art.data_json:
+        from ..dsregcmd import label_for
+        for s in art.data_json.get("summary", []):
+            if not s.get("label"):
+                s["label"] = label_for(s.get("key", ""))
     creator = db.session.get(User, art.created_by) if art.created_by else None
     return render_template("workspaces/artifact.html", ws=ws, art=art, creator=creator,
                            plugin=get_parser(art.kind))
@@ -809,7 +816,7 @@ def delete_artifact(workspace_id, artifact_id):
     db.session.delete(art)
     db.session.commit()
     flash("Artifact removed.", "info")
-    return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#artifacts")
+    return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#plugins")
 
 
 @ws_bp.route("/<int:workspace_id>/import-nuclei", methods=["POST"])

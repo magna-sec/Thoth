@@ -171,6 +171,7 @@ a.dc-host:hover { color: var(--accent); }
 .plugin-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 12px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
 .pp-item { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; }
 .pp-item input { width: auto; flex: none; }
+.chip.disabled { opacity: .4; text-decoration: line-through; }
 
 /* Artifact rendering: headline banner, notable list, kv grid, pills. */
 .headline-banner { display: flex; gap: 14px; align-items: center; padding: 14px 18px; margin-bottom: 16px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; }

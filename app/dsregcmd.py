@@ -32,6 +32,13 @@ SUMMARY_FIELDS = [
     ("OsVersion", "OS Version"),
 ]
 SUMMARY_KEYS = [k for k, _ in SUMMARY_FIELDS]  # back-compat
+_LABELS = {k: lbl for k, lbl in SUMMARY_FIELDS}
+
+
+def label_for(key):
+    """Friendly label for a dsregcmd key — used to prettify artifacts saved before the
+    `label` field existed, so they don't render blank / raw."""
+    return _LABELS.get(key, key)
 # Only these render as a Yes/No pill. Everything else shows its literal value — otherwise a
 # non-boolean field whose value happens to read "YES"/"NO" would flash a misleading pill.
 BOOL_KEYS = {"AzureAdJoined", "EnterpriseJoined", "DomainJoined", "WorkplaceJoined",

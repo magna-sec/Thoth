@@ -135,7 +135,7 @@ CSV/JSON/Markdown for humans and spreadsheets, TXT (tab-separated, or plain line
 
 ## Nuclei
 
-The **nuclei** parser plugin (add it from the **Artifacts** tab) takes the output of a nuclei
+The **nuclei** parser plugin (add it from the workspace **Plugins** tab) takes the output of a nuclei
 run — `nuclei -jsonl` or `nuclei -json`, pasted or uploaded. Each finding is matched to its
 subdomain **by host**; findings for hosts that aren't subdomains in the workspace are
 reported, not invented. Matches carry their **severity** and show up as a ranked
@@ -190,8 +190,10 @@ enabled.
 
 ## Recon artifacts
 
-The **Artifacts** tab (per workspace) ingests recon outputs through parser plugins into a
-tidy, per-artifact view — nothing is executed, it's pure text parsing:
+The workspace **Plugins** tab is the hub for the parser plugins: it shows which capabilities
+are enabled for the engagement (with inline enable/disable for the owner/admin), an **Import**
+form, and the **saved artifacts** list. Imports are parsed into a tidy, per-artifact view —
+nothing is executed, it's pure text parsing:
 
 - **`dsregcmd /status`** — a device's Entra ID (Azure AD) / domain join state. A plain-English
   headline (e.g. *Hybrid Azure AD joined to Contoso*), a **Notable** panel of security-relevant

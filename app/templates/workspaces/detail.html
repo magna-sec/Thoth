@@ -30,7 +30,7 @@
   <button class="tab active" data-tab="overview">Overview</button>
   <button class="tab" data-tab="findings">Results</button>
   <button class="tab" data-tab="analysis">Analysis</button>
-  <button class="tab" data-tab="artifacts">Artifacts{% if artifact_rows %} <span class="muted">{{ artifact_rows|length }}</span>{% endif %}</button>
+  <button class="tab" data-tab="plugins">Plugins{% if artifact_rows %} <span class="muted">{{ artifact_rows|length }}</span>{% endif %}</button>
   <button class="tab" data-tab="domains">Subdomains</button>
   {% if ws.plugin_enabled('screenshot') %}<button class="tab" data-tab="shots">Screenshots</button>{% endif %}
   {% if ws.plugin_enabled('dirsearch') %}<button class="tab" data-tab="fuzz">Directory Fuzzing</button>{% else %}<button class="tab" data-tab="fuzz">Settings</button>{% endif %}
@@ -87,15 +87,16 @@
   <div class="card">
     <div class="table-toolbar">
       <h2>Recon artifacts <span class="muted">({{ artifact_rows|length }})</span></h2>
-      <button class="btn small tab-jump" data-goto="artifacts" type="button">
-        {{ 'Manage' if artifact_rows else 'Add dsregcmd / PAC / nmap →' }}</button>
+      <button class="btn small tab-jump" data-goto="plugins" type="button">
+        {{ 'View all' if artifact_rows else 'Import via a plugin →' }}</button>
     </div>
     {% if artifact_rows %}
       {{ artifact_list(artifact_rows, limit=5) }}
     {% else %}
-      <p class="muted">Paste <span class="mono">dsregcmd /status</span>, a PAC file or an
-        nmap scan in the <button class="btn small tab-jump" data-goto="artifacts" type="button">Artifacts</button>
-        tab — they're parsed into a readable view and saved here.</p>
+      <p class="muted">Import <span class="mono">dsregcmd /status</span>, a PAC file, an
+        nmap scan, a Nessus export or nuclei results in the
+        <button class="btn small tab-jump" data-goto="plugins" type="button">Plugins</button>
+        tab — parsed into a readable view.</p>
     {% endif %}
   </div>
 </section>
@@ -295,8 +296,8 @@
     <p class="muted" style="font-size:13px; margin:0">
       🧪 <strong>Have nuclei results?</strong> The <strong>nuclei</strong> parser matches
       each finding to its subdomain by host and shows them in that host's Vulnerabilities
-      panel. Add them in the
-      <button class="btn small tab-jump" data-goto="artifacts" type="button">Artifacts</button>
+      panel. Import them in the
+      <button class="btn small tab-jump" data-goto="plugins" type="button">Plugins</button>
       tab.
     </p>
   </div>
@@ -520,29 +521,9 @@
       </div>
       <button class="btn primary" type="submit" style="margin-top:8px">Save settings</button>
     </form>
-
     {% if can_manage %}
-    <hr style="border-color:var(--border); margin:12px 0">
-    <form method="post" action="{{ url_for('workspaces.update_settings', workspace_id=ws.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="manage_plugins" value="1">
-      <input type="hidden" name="next" value="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#fuzz">
-      <div style="margin-bottom:4px"><strong>Plugins enabled for this workspace</strong>
-        <span class="muted" style="font-size:12px">— tabs, buttons and imports for disabled plugins are hidden. <a href="{{ url_for('plugins.catalog') }}">Catalogue →</a></span></div>
-      <div class="plugin-pick">
-        <div class="muted" style="font-size:11px; grid-column:1/-1">MODULES</div>
-        {% for p in catalog.modules %}
-        <label class="pp-item" title="{{ p.description }}"><input type="checkbox" name="plugins" value="{{ p.name }}" {{ 'checked' if p.enabled }}>
-          <span class="mono">{{ p.name }}</span></label>
-        {% endfor %}
-        <div class="muted" style="font-size:11px; grid-column:1/-1; margin-top:6px">PARSERS</div>
-        {% for p in catalog.parsers %}
-        <label class="pp-item" title="{{ p.description }}"><input type="checkbox" name="plugins" value="{{ p.name }}" {{ 'checked' if p.enabled }}>
-          <span class="mono">{{ p.name }}</span></label>
-        {% endfor %}
-      </div>
-      <button class="btn" type="submit" style="margin-top:8px">Save plugins</button>
-    </form>
+    <p class="muted" style="font-size:12px; margin-top:8px">Enable/disable plugins for this
+      workspace in the <button class="btn small tab-jump" data-goto="plugins" type="button">Plugins</button> tab.</p>
     {% endif %}
     <hr style="border-color:var(--border); margin:12px 0">
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
@@ -651,19 +632,59 @@
   </div>
 </section>
 
-<!-- ARTIFACTS (dsregcmd / PAC) -->
-<section class="tabpane" data-pane="artifacts" id="artifacts">
+<!-- PLUGINS: capabilities, imports (parser plugins), and saved artifacts -->
+<section class="tabpane" data-pane="plugins" id="plugins">
   <div class="card">
-    <h2>Add a recon artifact <span class="muted">— via a parser plugin</span></h2>
+    <div class="table-toolbar">
+      <h2>Plugins <span class="muted">— capabilities enabled for this workspace</span></h2>
+      <a class="btn small" href="{{ url_for('plugins.catalog') }}">Catalogue →</a>
+    </div>
+    <div class="fp-row"><span class="fp-key" title="Run against targets">Modules</span>
+      {% for p in catalog.modules %}
+      <span class="chip {{ 'tech' if p.enabled else 'disabled' }}" title="{{ p.description }}">{{ p.name }}</span>
+      {% endfor %}
+    </div>
+    <div class="fp-row"><span class="fp-key" title="Ingest artifacts you already have">Parsers</span>
+      {% for p in catalog.parsers %}
+      <span class="chip {{ 'tech' if p.enabled else 'disabled' }}" title="{{ p.description }}">{{ p.name }}</span>
+      {% endfor %}
+    </div>
+    {% if can_manage %}
+    <details style="margin-top:10px">
+      <summary class="muted" style="cursor:pointer; font-size:13px">Manage — enable / disable plugins for this workspace</summary>
+      <form method="post" action="{{ url_for('workspaces.update_settings', workspace_id=ws.id) }}" style="margin-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="manage_plugins" value="1">
+        <input type="hidden" name="next" value="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#plugins">
+        <div class="plugin-pick">
+          <div class="muted" style="font-size:11px; grid-column:1/-1">MODULES</div>
+          {% for p in catalog.modules %}
+          <label class="pp-item" title="{{ p.description }}"><input type="checkbox" name="plugins" value="{{ p.name }}" {{ 'checked' if p.enabled }}>
+            <span class="mono">{{ p.name }}</span></label>
+          {% endfor %}
+          <div class="muted" style="font-size:11px; grid-column:1/-1; margin-top:6px">PARSERS</div>
+          {% for p in catalog.parsers %}
+          <label class="pp-item" title="{{ p.description }}"><input type="checkbox" name="plugins" value="{{ p.name }}" {{ 'checked' if p.enabled }}>
+            <span class="mono">{{ p.name }}</span></label>
+          {% endfor %}
+        </div>
+        <p class="muted" style="font-size:12px">Disabled plugins' tabs, buttons and imports are hidden and rejected.</p>
+        <button class="btn" type="submit">Save plugins</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Import <span class="muted">— via a parser plugin</span></h2>
     {% if not parsers %}
-    <p class="muted">No parser plugins are enabled for this workspace. Enable some in
-      <button class="btn small tab-jump" data-goto="fuzz" type="button">Settings</button>.</p>
+    <p class="muted">No parser plugins are enabled for this workspace. Enable some above.</p>
     {% else %}
     <p class="muted" style="font-size:12px">
       Paste or upload something a parser plugin understands
-      ({% for p in parsers.values() %}<span class="mono">{{ p.title }}</span>{{ ", " if not loop.last }}{% endfor %});
-      Thoth parses it into a readable view and saves it here. Nothing is executed.
-      <a href="{{ url_for('plugins.catalog') }}">See all plugins →</a>
+      ({% for p in parsers.values() %}<span class="mono">{{ p.title }}</span>{{ ", " if not loop.last }}{% endfor %}).
+      Thoth parses it into a readable view. <span class="mono">nuclei</span> folds findings
+      onto matching subdomains; the rest are saved below. Nothing is executed.
     </p>
     <form method="post" enctype="multipart/form-data"
           action="{{ url_for('workspaces.add_artifact', workspace_id=ws.id) }}">

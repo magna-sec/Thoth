@@ -157,6 +157,22 @@ def test_add_dsregcmd_artifact_route_autodetects_and_opens_it(client, app, works
     assert "Contoso Ltd" in page                 # landed on the parsed view
 
 
+def test_dsregcmd_old_artifact_without_label_renders_friendly_label(client, app, workspace):
+    """Artifacts saved before the `label` field existed must not render blank labels —
+    the detail view backfills a friendly label from the key."""
+    with app.app_context():
+        art = Artifact(workspace_id=workspace, kind="dsregcmd", raw="",
+                       data_json={"headline": "Azure AD joined", "notable": [],
+                                  "sections": [],
+                                  "summary": [{"key": "AzureAdJoined", "value": "YES",
+                                               "bool": True}]})  # no "label"
+        db.session.add(art)
+        db.session.commit()
+        aid = art.id
+    page = client.get(f"/workspaces/{workspace}/artifacts/{aid}").data.decode()
+    assert "Azure AD Joined" in page      # backfilled from the key, not blank
+
+
 def test_add_pac_artifact_via_upload(client, app, workspace):
     client.post(f"/workspaces/{workspace}/artifacts",
                 data={"kind": "pac", "file": (io.BytesIO(PAC.encode()), "proxy.pac")},
@@ -186,7 +202,7 @@ def test_workspace_lists_artifacts_and_detail_pages_render(client, app, workspac
 
     # The workspace page LISTS them (compact) on the tab and Overview, not the full dump.
     page = client.get(f"/workspaces/{workspace}").data.decode()
-    assert 'data-pane="artifacts"' in page
+    assert 'data-pane="plugins"' in page
     assert "laptop" in page and "corp.pac" in page
     assert "Recon artifacts" in page                    # Overview card
     assert "artifact-grid" not in page                  # the full render is NOT dumped here

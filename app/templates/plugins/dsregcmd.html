@@ -25,7 +25,8 @@
   <table class="kv"><tbody>
     {% for s in d.summary %}
     <tr>
-      <td class="k">{{ s.label }}</td>
+      {# Fall back to the raw key: artifacts saved before `label` existed have none. #}
+      <td class="k">{{ s.label or s.key }}</td>
       <td class="v sensitive">
         {% if s.bool is sameas true %}<span class="pill pill-yes">Yes</span>
         {% elif s.bool is sameas false %}<span class="pill pill-no">No</span>

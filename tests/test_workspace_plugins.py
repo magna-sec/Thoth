@@ -88,6 +88,17 @@ def test_disabled_ui_hides_tabs_and_pickers(client, app, workspace):
     assert "No parser plugins are enabled" in page   # empty parser picker note
 
 
+def test_plugins_tab_shows_capabilities_import_and_management(client, workspace):
+    page = client.get(f"/workspaces/{workspace}").data.decode()
+    assert 'data-pane="plugins"' in page and 'data-tab="plugins"' in page
+    # Capability overview lists module + parser names.
+    assert "iistilde" in page and "nessus" in page
+    # Import form is present…
+    assert "Import" in page and 'name="kind"' in page
+    # …and the admin management controls.
+    assert "Manage — enable / disable plugins" in page
+
+
 def test_non_owner_operator_cannot_manage(app, workspace):
     with app.app_context():
         op = User(email="operator", is_admin=False)

@@ -13,7 +13,7 @@
 {% endmacro %}
 {% block content %}
 <div class="page-head">
-  <a href="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#artifacts" class="muted">← {{ ws.name }} · artifacts</a>
+  <a href="{{ url_for('workspaces.detail', workspace_id=ws.id) }}#plugins" class="muted">← {{ ws.name }} · plugins</a>
 </div>
 <div class="page-head">
   <h1>{{ plugin.title if plugin else art.kind }}</h1>
