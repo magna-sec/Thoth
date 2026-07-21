@@ -57,8 +57,7 @@
       `<td class="mono">${f.content_length ?? ''}</td>` +
       `<td class="muted">${esc(extra.server)}</td>` +
       `<td class="muted sensitive">${esc(extra.title)}</td>` +
-      `<td class="row-actions"><button class="btn small resp-btn" data-tid="${f.target_id || ''}" data-path="${esc(f.path)}">Response</button>` +
-      `<button class="copy" data-copy="${esc(copyUrl)}">⧉</button></td>`;
+      `<td class="row-actions"><button class="copy" data-copy="${esc(copyUrl)}">⧉</button></td>`;
     body.insertBefore(tr, body.firstChild);
     bumpStat('stat-findings');
     if (extra.alive) bumpStat('stat-alive');

@@ -17,8 +17,8 @@ re-fuzzed twice — no duplicated work between runs or teammates.
 
 > For authorized security testing only. Only scan hosts you have permission to test.
 > Thoth only touches a target during an **explicit** run (alive, dnsbrute, dirsearch,
-> screenshot, iistilde) or the on-demand response viewer — browsing the UI, viewing a
-> subdomain, and every parser (PAC, dsregcmd, nmap, nuclei) make **no** outbound requests.
+> screenshot, iistilde) or a manual **Check live** — browsing the UI, viewing a subdomain,
+> and every parser (PAC, dsregcmd, nmap, nessus, nuclei) make **no** outbound requests.
 
 ## Features
 
@@ -47,11 +47,12 @@ re-fuzzed twice — no duplicated work between runs or teammates.
   [Nuclei](#nuclei-and-bulk-actions).
 - **IIS tilde enumeration** — recover 8.3 short names from exposed IIS hosts.
   See [IIS tilde](#iis-tilde-enumeration).
-- **Recon artifacts** — paste `dsregcmd /status` output or a PAC file; Thoth parses each
-  into a readable view (join/tenant state; proxies + the internal estate that bypasses
-  them). See [Artifacts](#recon-artifacts).
+- **Recon artifacts** — paste `dsregcmd /status`, a PAC file, an nmap scan or a `.nessus`
+  export; Thoth parses each into a readable view (join/tenant state; proxies + DIRECT
+  estate + misconfigs; hosts/ports/services; vulnerabilities by severity). See
+  [Artifacts](#recon-artifacts).
 - **Results** — rich filters (status, exclude-status/size, WAF, hide dead/3xx) that **stick
-  across refreshes**, clickable paths, and a full **response viewer** (through your proxy).
+  across refreshes** and clickable paths that open in your own browser.
 - **Analysis** — ASN ownership, WAF vendors, tech, servers, and countries across the estate.
 - **Tasks** with live progress + persisted CLI-style output, and a **Stop** button — the
   task finishes its in-flight requests and unwinds, keeping the findings and dedup entries
@@ -97,8 +98,8 @@ example.com          exact host
 
 No allow rules means no restriction (existing workspaces are unaffected). Once any allow
 rule exists, **only** matching hosts are ever requested. It's enforced centrally — in the
-task runner, the quick-check and the response viewer — rather than per module, so a new
-module can't forget it. Tasks skip out-of-scope hosts and say so in the run log, discovery
+task runner and the quick-check — rather than per module, so a new module can't forget it.
+Tasks skip out-of-scope hosts and say so in the run log, discovery
 drops them before resolving, and the Subdomains tab greys them with an
 **out of scope** badge.
 
@@ -172,7 +173,7 @@ adding one is a one-file change and it appears throughout the UI. The **Plugins*
   `dirsearch`, `screenshot`, `iistilde`. Drop `app/modules/yours.py` with a `@register`
   class extending `Module`.
 - **Parsers** — ingest an artifact you already have and either render it (`pac`, `dsregcmd`,
-  `nmap`) or fold it onto the workspace's subdomains (`nuclei`, a `kind = "findings"` parser
+  `nmap`, `nessus`) or fold it onto the workspace's subdomains (`nuclei`, a `kind = "findings"` parser
   that writes each finding to the matching host's Vulnerabilities panel). Drop
   `app/plugins/yours_plugin.py` with a `@register_parser` class extending `ParserPlugin`
   (a `detect()`, a `parse()`, and either a render partial under `templates/plugins/` or an
@@ -204,9 +205,12 @@ tidy, per-artifact view — nothing is executed, it's pure text parsing:
   read of typical PAC structure, not a JS interpreter.
 - **nmap** (`-oX` XML, `-oG` greppable, or the normal report) — live hosts, open ports, services
   and versions, with notable services (SMB, LDAP, Kerberos, RDP, databases…) highlighted.
+- **Nessus** (`.nessus` export) — scanned hosts and their vulnerabilities ranked by severity
+  (critical → info), with CVSS, CVEs, a filterable critical/high table, and per-host detail.
 
 Paste or upload; the type is auto-detected (or pick it). Saved per workspace and wiped with
-it.
+it. Large lists (e.g. a PAC's hundreds of DIRECT hosts) render as bounded, filterable
+clouds rather than a wall of chips.
 
 ## Fingerprints
 

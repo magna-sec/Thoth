@@ -1,0 +1,95 @@
+{# Renders a parsed Nessus artifact. Context: `art`, `d` (art.data_json). #}
+{% set s = d.summary.sev %}
+<div class="headline-banner">
+  <span class="headline-icon">🛡️</span>
+  <div>
+    <div class="headline-main">
+      {{ d.summary.hosts }} host(s) · {{ d.summary.total }} finding(s)
+    </div>
+    <div class="muted" style="font-size:12px">Nessus vulnerability scan — parsed statically</div>
+  </div>
+</div>
+
+<div class="stat-strip">
+  {% for k in ("critical", "high", "medium", "low", "info") %}
+  <div class="stat">
+    <div class="stat-num"><span class="chip sev-{{ k }}" style="font-size:15px">{{ s.get(k, 0) }}</span></div>
+    <div class="stat-label">{{ k }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if d.notable %}
+<div class="card">
+  <div class="table-toolbar">
+    <h2>Critical &amp; High <span class="muted">({{ d.notable|length }})</span></h2>
+    <input type="text" id="nessus-notable-filter" class="filter" placeholder="Filter…">
+  </div>
+  <div class="table-scroll">
+    <table class="data">
+      <thead><tr><th>Sev</th><th>Finding</th><th>Host</th><th>Port</th><th>CVSS</th><th>CVE</th></tr></thead>
+      <tbody id="nessus-notable">
+        {% for f in d.notable %}
+        <tr>
+          <td><span class="chip sev-{{ f.severity }}">{{ f.severity }}</span></td>
+          <td class="sensitive">{{ f.name }}
+            {% if f.synopsis %}<div class="muted" style="font-size:11px">{{ f.synopsis }}</div>{% endif %}</td>
+          <td class="mono sensitive">{{ f.host }}</td>
+          <td class="mono">{{ f.port }}/{{ f.protocol }}</td>
+          <td class="mono">{{ f.cvss or '—' }}</td>
+          <td class="mono">{{ f.cves | join(', ') if f.cves else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Hosts <span class="muted">({{ d.hosts|length }})</span></h2>
+  {% for h in d.hosts %}
+  <details {% if loop.first and h.sev_counts.critical + h.sev_counts.high %}open{% endif %}
+           style="border-bottom:1px solid var(--border); padding:6px 0">
+    <summary style="cursor:pointer; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+      <span class="mono sensitive">{{ h.name }}</span>
+      {% if h.fqdn and h.fqdn != h.name %}<span class="muted mono">{{ h.fqdn }}</span>{% endif %}
+      {% if h.os %}<span class="muted" style="font-size:12px">{{ h.os }}</span>{% endif %}
+      <span style="margin-left:auto">
+        {% for k in ("critical", "high", "medium", "low", "info") %}
+        {% if h.sev_counts[k] %}<span class="chip sev-{{ k }}" style="font-size:10px">{{ h.sev_counts[k] }} {{ k }}</span>{% endif %}
+        {% endfor %}
+      </span>
+    </summary>
+    <div class="table-scroll" style="margin-top:6px">
+      <table class="data">
+        <thead><tr><th>Sev</th><th>Finding</th><th>Port</th><th>CVSS</th><th>CVE</th></tr></thead>
+        <tbody>
+          {% for f in h.findings %}
+          <tr>
+            <td><span class="chip sev-{{ f.severity }}">{{ f.severity }}</span></td>
+            <td class="sensitive">{{ f.name }} {% if f.family %}<span class="muted" style="font-size:11px">{{ f.family }}</span>{% endif %}</td>
+            <td class="mono">{{ f.port }}/{{ f.protocol }}</td>
+            <td class="mono">{{ f.cvss or '—' }}</td>
+            <td class="mono">{{ f.cves | join(', ') if f.cves else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+
+<script>
+  (function () {
+    var inp = document.getElementById('nessus-notable-filter');
+    var body = document.getElementById('nessus-notable');
+    if (inp && body) inp.addEventListener('input', function () {
+      var q = inp.value.trim().toLowerCase();
+      body.querySelectorAll('tr').forEach(function (tr) {
+        tr.hidden = q !== '' && tr.textContent.toLowerCase().indexOf(q) === -1;
+      });
+    });
+  })();
+</script>

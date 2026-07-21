@@ -1,4 +1,4 @@
-{# Renders a parsed dsregcmd artifact. Context: `art`, `d` (art.data_json). #}
+{# Renders a parsed dsregcmd artifact concisely. Context: `art`, `d` (art.data_json). #}
 <div class="headline-banner">
   <span class="headline-icon">🪟</span>
   <div>
@@ -21,32 +21,36 @@
 
 {% if d.summary %}
 <div class="card">
-  <h2>At a glance</h2>
-  <div class="kv-grid">
+  <h2>Key facts</h2>
+  <table class="kv"><tbody>
     {% for s in d.summary %}
-    <div class="kv-cell">
-      <div class="kv-label">{{ s.label }}</div>
-      <div class="kv-value sensitive">
+    <tr>
+      <td class="k">{{ s.label }}</td>
+      <td class="v sensitive">
         {% if s.bool is sameas true %}<span class="pill pill-yes">Yes</span>
         {% elif s.bool is sameas false %}<span class="pill pill-no">No</span>
         {% else %}<span class="mono">{{ s.value or '—' }}</span>{% endif %}
-      </div>
-    </div>
+      </td>
+    </tr>
     {% endfor %}
-  </div>
+  </tbody></table>
 </div>
 {% endif %}
 
-<div class="artifact-grid">
-  {% for sec in d.sections %}
-  <div class="artifact-sec">
-    <h3>{{ sec.title }}</h3>
-    <table class="kv"><tbody>
-      {% for it in sec['items'] %}
-      <tr><td class="k">{{ it.key }}</td><td class="v mono sensitive">{{ it.value or '—' }}</td></tr>
-      {% endfor %}
-    </tbody></table>
-    {% if sec.notes %}<p class="muted mono" style="font-size:11px; margin:6px 0 0">{{ sec.notes | join(' · ') }}</p>{% endif %}
+{# The full boxed output is long and rarely needed — kept one click away. #}
+<details class="card">
+  <summary class="muted" style="cursor:pointer">All dsregcmd fields ({{ d.sections|length }} section{{ 's' if d.sections|length != 1 }})</summary>
+  <div class="artifact-grid" style="margin-top:10px">
+    {% for sec in d.sections %}
+    <div class="artifact-sec">
+      <h3>{{ sec.title }}</h3>
+      <table class="kv"><tbody>
+        {% for it in sec['items'] %}
+        <tr><td class="k">{{ it.key }}</td><td class="v mono sensitive">{{ it.value or '—' }}</td></tr>
+        {% endfor %}
+      </tbody></table>
+      {% if sec.notes %}<p class="muted mono" style="font-size:11px; margin:6px 0 0">{{ sec.notes | join(' · ') }}</p>{% endif %}
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
-</div>
+</details>

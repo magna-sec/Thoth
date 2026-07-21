@@ -6,6 +6,7 @@ it) — it then appears everywhere a parser plugin is offered.
 from .base import (ParserPlugin, all_parsers, detect_parser, get_parser,  # noqa: F401
                    register_parser)
 from . import dsregcmd_plugin  # noqa: F401,E402
+from . import nessus_plugin  # noqa: F401,E402
 from . import nmap_plugin  # noqa: F401,E402
 from . import nuclei_plugin  # noqa: F401,E402
 from . import pac_plugin  # noqa: F401,E402

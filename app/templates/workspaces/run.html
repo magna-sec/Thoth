@@ -103,7 +103,6 @@
         <td>{% if f.status_code %}<span class="badge s{{ f.status_code // 100 }}xx">{{ f.status_code }}</span>{% else %}<span class="badge dead">dead</span>{% endif %}</td>
         <td class="mono">{{ f.content_length if f.content_length is not none else "" }}</td>
         <td class="row-actions">
-          <button class="btn small resp-btn" data-tid="{{ f.target_id }}" data-path="{{ f.path }}">Response</button>
           <button class="copy" data-copy="{{ (f.target.base_url if f.target else '') ~ f.path }}">⧉</button>
         </td>
       </tr>
@@ -121,24 +120,9 @@
   runStatus: "{{ run.status }}"
 };</script>
 {% endblock %}
-{% block modals %}
-<div id="resp-modal" class="modal" hidden>
-  <div class="modal-box">
-    <div class="modal-head">
-      <span id="resp-title" class="mono"></span>
-      <button class="modal-close" id="resp-close">×</button>
-    </div>
-    <div class="modal-body">
-      <h3>Headers</h3><pre id="resp-headers" class="console"></pre>
-      <h3>Body <span id="resp-meta" class="muted"></span></h3><pre id="resp-body" class="console"></pre>
-    </div>
-  </div>
-</div>
-{% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/table.js') }}"></script>
 <script src="{{ url_for('static', filename='js/results.js') }}"></script>
-<script src="{{ url_for('static', filename='js/response.js') }}"></script>
 <script src="{{ url_for('static', filename='js/activity.js') }}"></script>
 <script src="{{ url_for('static', filename='js/run-page.js') }}"></script>
 {% endblock %}

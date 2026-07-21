@@ -280,7 +280,6 @@
               <ul class="path-list">
                 {% for p in g.paths %}
                 <li class="sensitive mono"><a href="{{ t.base_url }}{{ p.path }}" target="_blank" rel="noopener">{{ p.path }}</a>
-                  <button class="btn small resp-btn" data-tid="{{ t.id }}" data-path="{{ p.path }}">Response</button>
                   <button class="copy" data-copy="{{ t.base_url }}{{ p.path }}">⧉</button></li>
                 {% endfor %}
                 {% if g.truncated %}<li class="muted">…and {{ g.truncated }} more</li>{% endif %}
@@ -322,7 +321,6 @@
       {% if n.status %}<span class="badge s{{ n.status // 100 }}xx">{{ n.status }}</span>
       {% else %}<span class="badge dead">dead</span>{% endif %}
       {% if n.length is not none %}<span class="muted mono">{{ n.length }}</span>{% endif %}
-      <button class="btn small resp-btn" data-tid="{{ t.id }}" data-path="{{ n.path }}">Response</button>
       <button class="copy" data-copy="{{ t.base_url }}{{ n.path }}">⧉</button>
     </span>
   {% endif %}
@@ -394,7 +392,6 @@
             {% for label, why in r.keywords %}<span class="chip tech" title="{{ why }}">{{ label }}</span>{% endfor %}
           </td>
           <td class="row-actions">
-            <button class="btn small resp-btn" data-tid="{{ t.id }}" data-path="{{ r.url }}">Response</button>
             <button class="copy" data-copy="{{ t.base_url }}{{ r.url if r.url.startswith('/') else '/' ~ r.url }}">⧉</button>
           </td>
         </tr>
@@ -485,24 +482,9 @@
 
 <script>window.THOTH = { baseUrl: "{{ url_for('workspaces.detail', workspace_id=ws.id) }}" };</script>
 {% endblock %}
-{% block modals %}
-<div id="resp-modal" class="modal" hidden>
-  <div class="modal-box">
-    <div class="modal-head">
-      <span id="resp-title" class="mono"></span>
-      <button class="modal-close" id="resp-close">×</button>
-    </div>
-    <div class="modal-body">
-      <h3>Headers</h3><pre id="resp-headers" class="console"></pre>
-      <h3>Body <span id="resp-meta" class="muted"></span></h3><pre id="resp-body" class="console"></pre>
-    </div>
-  </div>
-</div>
-{% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/persist.js') }}"></script>
 <script src="{{ url_for('static', filename='js/tabs.js') }}"></script>
 <script src="{{ url_for('static', filename='js/domain-page.js') }}"></script>
-<script src="{{ url_for('static', filename='js/response.js') }}"></script>
 <script src="{{ url_for('static', filename='js/activity.js') }}"></script>
 {% endblock %}

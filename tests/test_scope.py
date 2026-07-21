@@ -98,15 +98,6 @@ def test_check_route_refuses_out_of_scope(client, app, workspace):
     assert r.status_code == 403 and r.get_json()["out_of_scope"] is True
 
 
-def test_response_viewer_refuses_out_of_scope(client, app, workspace):
-    with app.app_context():
-        db.session.get(Workspace, workspace).scope = "*.acme.test"
-        t = Target(workspace_id=workspace, host="evil.test", scheme="https")
-        db.session.add(t)
-        db.session.commit()
-        tid = t.id
-    r = client.get(f"/workspaces/{workspace}/response?target_id={tid}&path=/")
-    assert r.status_code == 403 and "Out of scope" in r.get_json()["error"]
 
 
 def test_scope_saved_and_shown(client, app, workspace):

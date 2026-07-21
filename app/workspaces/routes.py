@@ -7,8 +7,6 @@ from collections import Counter
 from datetime import datetime
 from urllib.parse import urlparse
 
-import requests
-
 from flask import (Blueprint, Response, abort, current_app, flash, jsonify,
                    redirect, render_template, request, send_from_directory,
                    stream_with_context, url_for)
@@ -974,31 +972,10 @@ def update_settings(workspace_id):
                     or url_for("workspaces.detail", workspace_id=ws.id) + "#fuzz")
 
 
-@ws_bp.route("/<int:workspace_id>/response")
-@login_required
-def view_response(workspace_id):
-    """On-demand full response fetch (through the workspace proxy) for a finding/URL."""
-    ws = _get_member_workspace(workspace_id)
-    target_id = request.args.get("target_id", type=int)
-    path = request.args.get("path", "/")
-    t = db.session.get(Target, target_id)
-    if t is None or t.workspace_id != ws.id:
-        abort(404)
-    refusal = scope_for(ws).reason(t.host)
-    if refusal:
-        return jsonify({"url": t.base_url, "error": f"Out of scope — {refusal}"}), 403
-    url = t.base_url + (path if path.startswith("/") else "/" + path)
-    try:
-        r = requests.get(url, timeout=12, allow_redirects=False, verify=False,
-                         proxies=to_proxies(ws.proxy), headers={"User-Agent": "Thoth/0.1"})
-        body = r.text[:200_000]
-        return jsonify({
-            "url": url, "status": r.status_code, "reason": r.reason,
-            "headers": dict(r.headers), "body": body,
-            "truncated": len(r.text) > len(body), "length": len(r.content),
-        })
-    except requests.RequestException as e:
-        return jsonify({"url": url, "error": f"{type(e).__name__}: {e}"}), 200
+# The on-demand response viewer was removed: it fetched the target live (through the proxy)
+# every time you clicked "Response", i.e. it touched endpoints outside an explicit scan.
+# Thoth now only makes requests during a module run. Use the path links to open a URL in
+# your own browser if you want to look at a page.
 
 
 @ws_bp.route("/<int:workspace_id>/checkall", methods=["POST"])
