@@ -1,0 +1,65 @@
+{# Renders a parsed AppLocker policy. Context: `art`, `d` (art.data_json). #}
+<div class="headline-banner">
+  <span class="headline-icon">🔒</span>
+  <div>
+    <div class="headline-main">
+      {{ d.summary.collections }} collection(s) · {{ d.summary.enforced }} enforced ·
+      {{ d.summary.rules }} rule(s)
+    </div>
+    <div class="muted" style="font-size:12px">Windows AppLocker policy — parsed statically</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Enforcement</h2>
+  <div class="fp-row">
+    {% for t, mode in d.summary.modes.items() %}
+    <span class="chip {{ 'sev-info' if mode == 'Enabled' else ('sev-medium' if mode == 'AuditOnly' else 'sev-high') }}"
+          title="{{ mode }}">{{ t }}: {{ mode }}</span>
+    {% endfor %}
+  </div>
+</div>
+
+{% if d.findings %}
+<div class="card">
+  <h2>Gaps &amp; bypasses <span class="muted">({{ d.findings|length }})</span></h2>
+  <ul class="notable-list">
+    {% for f in d.findings %}
+    <li><span class="chip sev-{{ f.severity }}">{{ f.severity }}</span>
+      <strong>{{ f.title }}</strong> <span class="muted">— {{ f.detail }}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Rules <span class="muted">— by collection</span></h2>
+  {% for c in d.collections %}
+  <details {% if c.enabled and loop.first %}open{% endif %}
+           style="border-bottom:1px solid var(--border); padding:6px 0">
+    <summary style="cursor:pointer; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+      <strong>{{ c.type }}</strong>
+      <span class="chip {{ 'sev-info' if c.enabled else ('sev-medium' if c.audit else 'sev-high') }}">{{ c.mode }}</span>
+      <span class="muted" style="font-size:12px">{{ c.rules|length }} rule(s) · {{ c.allow }} allow / {{ c.deny }} deny</span>
+    </summary>
+    {% if c.rules %}
+    <div class="table-scroll" style="margin-top:6px">
+      <table class="data">
+        <thead><tr><th>Action</th><th>Type</th><th>Name</th><th>Condition</th><th>Group</th></tr></thead>
+        <tbody>
+          {% for r in c.rules %}
+          <tr>
+            <td>{% if r.action == 'Deny' %}<span class="chip sev-high">Deny</span>{% else %}<span class="chip">Allow</span>{% endif %}</td>
+            <td class="muted">{{ r.kind }}</td>
+            <td class="sensitive">{{ r.name }}{% if r.is_default %} <span class="muted" style="font-size:10px">default</span>{% endif %}</td>
+            <td class="mono sensitive" style="word-break:break-all">{{ r.detail or '—' }}</td>
+            <td class="muted">{{ r.sid_label or r.sid }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<p class="muted" style="margin:6px 0 0">No rules.</p>{% endif %}
+  </details>
+  {% endfor %}
+</div>

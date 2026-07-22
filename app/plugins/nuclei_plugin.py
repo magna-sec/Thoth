@@ -85,6 +85,7 @@ class NucleiPlugin(ParserPlugin):
                    "is stored, the results go straight onto the subdomains.")
     glyph = "🧪"
     placeholder = "Paste nuclei -jsonl or -json output"
+    collect = "nuclei -l hosts.txt -jsonl -o nuclei.jsonl"
 
     def detect(self, text):
         return looks_like_nuclei(text)

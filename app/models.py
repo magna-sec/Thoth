@@ -17,12 +17,32 @@ class User(UserMixin, db.Model):
 
     memberships = db.relationship("WorkspaceMember", back_populates="user",
                                   cascade="all, delete-orphan")
+    logins = db.relationship("LoginEvent", back_populates="user",
+                             cascade="all, delete-orphan",
+                             order_by="LoginEvent.at.desc()")
 
     def set_password(self, pw):
         self.pw_hash = generate_password_hash(pw)
 
     def check_password(self, pw):
         return check_password_hash(self.pw_hash, pw)
+
+    @property
+    def last_login(self):
+        return self.logins[0].at if self.logins else None
+
+
+class LoginEvent(db.Model):
+    """One successful sign-in — for the admin Users page's login history."""
+    __tablename__ = "login_events"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    ip = db.Column(db.String(64))
+    user_agent = db.Column(db.String(300))
+
+    user = db.relationship("User", back_populates="logins")
 
 
 class Workspace(db.Model):

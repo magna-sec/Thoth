@@ -6,7 +6,7 @@ from flask import (Blueprint, abort, flash, redirect, render_template, request,
 from flask_login import current_user, login_required, login_user, logout_user
 
 from ..extensions import db
-from ..models import User
+from ..models import LoginEvent, User
 from . import admin_required
 
 auth_bp = Blueprint("auth", __name__)
@@ -20,6 +20,10 @@ def login():
         user = User.query.filter_by(email=email).first()
         if user and user.check_password(password):
             login_user(user)
+            db.session.add(LoginEvent(
+                user_id=user.id, ip=(request.remote_addr or "")[:64],
+                user_agent=(request.headers.get("User-Agent") or "")[:300]))
+            db.session.commit()
             return redirect(request.args.get("next") or url_for("index"))
         flash("Invalid credentials", "error")
     return render_template("auth/login.html")
@@ -55,8 +59,21 @@ def users():
             flash(f"Created {'admin' if is_admin else 'user'} '{email}'"
                   + (f" — password: {generated}" if generated else ""), "info")
         return redirect(url_for("auth.users"))
-    return render_template("auth/users.html",
-                           users=User.query.order_by(User.email).all())
+    users = User.query.order_by(User.email).all()
+    return render_template("auth/users.html", users=users)
+
+
+@auth_bp.route("/users/<int:user_id>")
+@admin_required
+def user_detail(user_id):
+    """Admin: one user's details + recent sign-in history (times / IPs)."""
+    u = db.session.get(User, user_id)
+    if u is None:
+        abort(404)
+    logins = (LoginEvent.query.filter_by(user_id=u.id)
+              .order_by(LoginEvent.at.desc()).limit(100).all())
+    return render_template("auth/user_detail.html", u=u, logins=logins,
+                           login_count=LoginEvent.query.filter_by(user_id=u.id).count())
 
 
 @auth_bp.route("/users/<int:user_id>/password", methods=["POST"])

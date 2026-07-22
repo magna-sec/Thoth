@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ u.email }} · Users · Thoth{% endblock %}
+{% block content %}
+<div class="page-head">
+  <a href="{{ url_for('auth.users') }}" class="muted">← Users</a>
+</div>
+<div class="page-head">
+  <h1 class="mono">{{ u.email }}</h1>
+  {% if u.is_admin %}<span class="badge s2xx">admin</span>{% else %}<span class="badge unchecked">user</span>{% endif %}
+  {% if u.id == current_user.id %}<span class="muted">(you)</span>{% endif %}
+</div>
+
+<div class="stat-strip">
+  <div class="stat"><div class="stat-num">{{ login_count }}</div><div class="stat-label">Sign-ins</div></div>
+  <div class="stat">
+    <div class="stat-num" style="font-size:16px">{{ u.last_login.strftime("%Y-%m-%d %H:%M") if u.last_login else "—" }}</div>
+    <div class="stat-label">Last login</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num" style="font-size:16px">{{ u.created_at.strftime("%Y-%m-%d") if u.created_at else "—" }}</div>
+    <div class="stat-label">Created</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Sign-in history <span class="muted">— most recent first</span></h2>
+  <table class="data">
+    <thead><tr><th>When (UTC)</th><th>IP</th><th>User agent</th></tr></thead>
+    <tbody>
+      {% for e in logins %}
+      <tr>
+        <td class="mono">{{ e.at.strftime("%Y-%m-%d %H:%M:%S") if e.at else "—" }}</td>
+        <td class="mono sensitive">{{ e.ip or "—" }}</td>
+        <td class="muted" style="max-width:520px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ e.user_agent or "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No sign-ins recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

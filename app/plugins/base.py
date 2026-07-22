@@ -51,6 +51,7 @@ class ParserPlugin(ABC):
     glyph: str = "🧩"             # catalogue icon (kept ASCII-safe elsewhere)
     placeholder: str = ""         # textarea hint
     partial: str = ""             # template partial that renders parsed data
+    collect: str = ""             # command(s) to collect this input on the target host
     # "artifact" — parse() output is stored as an Artifact and rendered via `partial`.
     # "findings" — the plugin instead ingests into the workspace (Findings on targets) via
     #   ingest(); nothing is stored as an Artifact. e.g. nuclei → subdomain vulnerabilities.

@@ -98,6 +98,34 @@ def test_set_password_rejects_short(client, app):
     assert "at least 8" in page
 
 
+def test_login_is_recorded_and_shown(client, app):
+    from app.models import LoginEvent, User
+    # `client` fixture already logged in magna once.
+    with app.app_context():
+        magna = User.query.filter_by(email="magna").first()
+        assert LoginEvent.query.filter_by(user_id=magna.id).count() >= 1
+        assert magna.last_login is not None
+        mid = magna.id
+
+    # The Users list shows a last-login column…
+    lst = client.get("/users").data.decode()
+    assert "Last login" in lst
+    # …and each user is clickable to a detail page with sign-in history.
+    detail = client.get(f"/users/{mid}").data.decode()
+    assert "Sign-in history" in detail and "Sign-ins" in detail
+
+
+def test_user_detail_requires_admin(app):
+    with app.app_context():
+        op = User(email="operator", is_admin=False)
+        op.set_password("operator-pw")
+        db.session.add(op)
+        db.session.commit()
+        oid = op.id
+    op_client = _login(app, "operator", "operator-pw")
+    assert op_client.get(f"/users/{oid}").status_code == 403
+
+
 def test_set_password_requires_admin(client, app):
     with app.app_context():
         op = User(email="operator", is_admin=False)

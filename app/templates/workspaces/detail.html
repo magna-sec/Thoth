@@ -701,6 +701,21 @@
         <button class="btn primary" type="submit">Parse &amp; save</button>
       </div>
     </form>
+    {% set collectors = parsers.values() | selectattr('collect') | list %}
+    {% if collectors %}
+    <details style="margin-top:10px">
+      <summary class="muted" style="cursor:pointer; font-size:12px">How to collect these — commands to run on the target host</summary>
+      <div style="margin-top:6px">
+        {% for p in collectors %}
+        <div style="margin-bottom:8px">
+          <span class="muted" style="font-size:12px">{{ p.title }}</span>
+          <button class="copy" data-copy="{{ p.collect }}" title="Copy">⧉</button>
+          <pre class="console" style="margin-top:2px; white-space:pre-wrap">{{ p.collect }}</pre>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
     {% endif %}
   </div>
 

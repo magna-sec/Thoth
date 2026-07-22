@@ -1,22 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200" role="img" aria-label="Thoth">
   <rect width="640" height="200" rx="18" fill="#17120c"/>
-  <!-- emblem: ibis (Thoth's sacred bird) before the moon he governs -->
+  <!-- emblem: ibis-headed Thoth before the moon he governs, bearing a was-sceptre -->
   <g transform="translate(100 100)">
-    <circle r="78" fill="#241c12" stroke="#5c4523" stroke-width="2"/>
-    <!-- crescent moon, set behind and to the right -->
-    <path d="M44 -42a44 44 0 1 0 0 84 34 34 0 1 1 0-84z" fill="#e8b23c" opacity="0.88"/>
-    <!-- ibis in profile: body, slender neck, round head, long decurved bill, legs -->
+    <circle r="80" fill="#241c12" stroke="#5c4523" stroke-width="2"/>
+    <path d="M44 -44a46 46 0 1 0 0 88 36 36 0 1 1 0-88z" fill="#e8b23c" opacity="0.88"/>
     <g fill="#f3e3c3">
-      <path d="M32 24 C48 10 40 -14 10 -14 C-2 -15 -8 -22 -10 -30 L0 -32
-               C4 -16 20 -14 30 -10 C46 -2 42 22 26 30 Z"/>
-      <circle cx="-12" cy="-31" r="9.5"/>
-      <path d="M-18 -31 Q-44 -23 -54 6 Q-47 -3 -36 -8 Q-25 -19 -13 -25 Z"/>
-      <path d="M16 26 L14 52 M28 24 L30 50" stroke="#f3e3c3" stroke-width="3.4"
-            fill="none" stroke-linecap="round"/>
+      <!-- shoulders + tapered robe to the feet -->
+      <path d="M-12 -38 Q0 -45 12 -38 L11 -20 L-11 -20 Z"/>
+      <path d="M-11 -20 L11 -20 L18 48 L-18 48 Z"/>
+      <!-- forward arm across the waist -->
+      <path d="M-11 -17 L14 -9 L13 -2 L-11 -9 Z"/>
+      <!-- ibis head + long decurved beak -->
+      <circle cx="-2" cy="-49" r="10"/>
+      <path d="M-10 -49 Q-31 -42 -41 -23 Q-31 -34 -12 -43 Z"/>
     </g>
-    <circle cx="-14" cy="-33" r="2.6" fill="#241c12"/>
+    <circle cx="-5" cy="-51" r="2.3" fill="#241c12"/>
+    <!-- was-sceptre -->
+    <g stroke="#e8b23c" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M27 -50 L27 46"/>
+      <path d="M27 -50 L18 -59"/>
+      <path d="M20 46 L34 46"/>
+    </g>
   </g>
-  <!-- wordmark -->
-  <text x="210" y="108" font-family="Georgia, 'Times New Roman', serif" font-size="72" fill="#f3e3c3" font-weight="700">Thoth</text>
-  <text x="212" y="140" font-family="ui-sans-serif, Segoe UI, sans-serif" font-size="18" fill="#a8916a" letter-spacing="3">CYBER ENUMERATION PLATFORM</text>
+  <text x="210" y="106" font-family="Georgia,'Times New Roman',serif" font-size="70" fill="#f3e3c3" font-weight="700">Thoth</text>
+  <text x="212" y="138" font-family="ui-sans-serif,Segoe UI,sans-serif" font-size="17" fill="#a8916a" letter-spacing="3">CYBER ENUMERATION PLATFORM</text>
 </svg>

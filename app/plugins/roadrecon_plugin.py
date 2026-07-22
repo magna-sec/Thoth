@@ -14,6 +14,8 @@ class RoadreconCapPlugin(ParserPlugin):
     glyph = "🛂"
     placeholder = 'Paste Conditional Access policy JSON (e.g. {"value":[{"displayName":…}]})'
     partial = "plugins/roadrecon.html"
+    collect = ("roadrecon auth -u user@tenant -p PASS && roadrecon gather   # ROADtools\n"
+               "# or via Graph:  Get-MgIdentityConditionalAccessPolicy | ConvertTo-Json -Depth 8")
 
     def detect(self, text):
         return looks_like_cap(text)

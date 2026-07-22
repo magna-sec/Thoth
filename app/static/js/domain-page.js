@@ -47,6 +47,41 @@
   document.getElementById('tree-expand')?.addEventListener('click', () => setTree(true));
   document.getElementById('tree-collapse')?.addEventListener('click', () => setTree(false));
 
+  // Site tree: hide nodes by status code (bucket checkboxes + exact codes). A parent
+  // folder stays visible while any descendant result is still shown.
+  const treeRoot = document.querySelector('.tree-root');
+  if (treeRoot) {
+    const hideBoxes = [...document.querySelectorAll('.tree-hide')];
+    const codesInput = document.getElementById('tree-hide-codes');
+    const bucket = (code) => (code === '0' ? 'dead' : code.charAt(0) + 'xx');
+
+    const applyTreeStatusFilter = () => {
+      const hidden = new Set(hideBoxes.filter(b => b.checked).map(b => b.value));
+      const codes = new Set((codesInput?.value || '').split(',')
+        .map(s => s.trim()).filter(Boolean));
+      const childLis = (li) => {
+        const ul = li.querySelector(':scope > details > ul, :scope > ul');
+        return ul ? [...ul.children].filter(c => c.tagName === 'LI') : [];
+      };
+      const walk = (li) => {
+        const own = li.dataset.status;                 // '' for an inferred directory
+        const ownHidden = own !== '' && (hidden.has(bucket(own)) || codes.has(own));
+        let anyChildVisible = false;
+        childLis(li).forEach(c => { if (walk(c)) anyChildVisible = true; });
+        // A leaf shows unless its own status is hidden; a folder shows if anything under
+        // it still shows (or it's itself a non-hidden result).
+        const visible = anyChildVisible || (own !== '' && !ownHidden);
+        li.hidden = !visible;
+        return visible;
+      };
+      [...treeRoot.children].filter(c => c.tagName === 'LI').forEach(walk);
+    };
+
+    hideBoxes.forEach(b => b.addEventListener('change', applyTreeStatusFilter));
+    codesInput?.addEventListener('input', applyTreeStatusFilter);
+    window.Thoth.persist('tree-status', [...hideBoxes, codesInput], applyTreeStatusFilter);
+  }
+
   // Standalone "Check live" on the header
   const btn = document.querySelector('.check-one[data-standalone]');
   if (btn) btn.addEventListener('click', async () => {

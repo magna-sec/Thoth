@@ -6,12 +6,13 @@
   <div class="card">
     <h2>Accounts</h2>
     <table class="data">
-      <thead><tr><th>Email</th><th>Role</th><th>Password</th><th></th></tr></thead>
+      <thead><tr><th>Email</th><th>Role</th><th>Last login</th><th>Password</th><th></th></tr></thead>
       <tbody>
         {% for u in users %}
         <tr>
-          <td class="mono">{{ u.email }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}</td>
+          <td class="mono"><a href="{{ url_for('auth.user_detail', user_id=u.id) }}">{{ u.email }}</a>{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}</td>
           <td>{% if u.is_admin %}<span class="badge s2xx">admin</span>{% else %}<span class="badge unchecked">user</span>{% endif %}</td>
+          <td class="muted">{{ u.last_login.strftime("%Y-%m-%d %H:%M") if u.last_login else "never" }}</td>
           <td>
             <form method="post" action="{{ url_for('auth.set_password', user_id=u.id) }}"
                   style="margin:0; display:inline-flex; gap:4px">

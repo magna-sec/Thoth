@@ -299,7 +299,9 @@
 {# Recursive: a node with children renders as a collapsible directory, a leaf as a link.
    Only the top level is open by default — a fuzzed host is thousands of paths deep. #}
 {% macro treenode(n) %}
-<li>
+{# data-status: this node's own status (0 = dead) when it's a finding, else blank for an
+   inferred parent directory — drives the hide-by-status filter. #}
+<li data-status="{{ (n.status if n.status else 0) if n.endpoint else '' }}">
   {% if n.children %}
     <details class="tree-dir" {% if n.depth == 0 %}open{% endif %}>
       <summary>
@@ -332,11 +334,18 @@
     <div class="table-toolbar">
       <h2>Site tree <span class="muted">— {{ tree_stats.nodes }} node(s) from {{ total_findings }} finding(s)</span></h2>
       <div class="domain-filters">
+        <span class="muted" style="font-size:12px">Hide</span>
+        <label class="ctl"><input type="checkbox" class="tree-hide" value="2xx"> 2xx</label>
+        <label class="ctl"><input type="checkbox" class="tree-hide" value="3xx"> 3xx</label>
+        <label class="ctl"><input type="checkbox" class="tree-hide" value="4xx"> 4xx</label>
+        <label class="ctl"><input type="checkbox" class="tree-hide" value="5xx"> 5xx</label>
+        <label class="ctl"><input type="checkbox" class="tree-hide" value="dead"> dead</label>
+        <input type="text" id="tree-hide-codes" class="filter" style="width:150px" placeholder="Hide codes e.g. 500,403">
         <button class="btn small" type="button" id="tree-expand">Expand all</button>
         <button class="btn small" type="button" id="tree-collapse">Collapse all</button>
       </div>
     </div>
-    <p class="muted" style="font-size:12px">Paths folded into the directory structure they imply. A count is the findings at or under that branch; a directory also carrying a badge was itself a hit, not just an inferred parent.</p>
+    <p class="muted" style="font-size:12px">Paths folded into the directory structure they imply. A count is the findings at or under that branch; a directory also carrying a badge was itself a hit, not just an inferred parent. Hiding a status keeps parent folders that still contain visible results.</p>
     {% if tree %}
     <ul class="tree tree-root">
       {% for n in tree %}{{ treenode(n) }}{% endfor %}

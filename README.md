@@ -18,12 +18,15 @@ re-fuzzed twice — no duplicated work between runs or teammates.
 > For authorized security testing only. Only scan hosts you have permission to test.
 > Thoth only touches a target during an **explicit** run (alive, dnsbrute, dirsearch,
 > screenshot, iistilde) or a manual **Check live** — browsing the UI, viewing a subdomain,
-> and every parser (PAC, dsregcmd, nmap, nessus, Conditional Access, nuclei) make **no**
-> outbound requests.
+> and every parser (PAC, dsregcmd, nmap, nessus, Conditional Access, AppLocker, nuclei) make
+> **no** outbound requests.
 
 ## Features
 
 - **Workspaces** per engagement, with one-command **wipe**.
+- **Accounts & audit** — admin **Users** page: create/delete users, reset (or change your own)
+  password, and click a user to see their **sign-in history** (times / IPs). `flask passwd`
+  changes a password from the CLI.
 - **Scope guard** — an allow/deny list per engagement, enforced before every request. See
   [Scope](#scope).
 - **Discovery** — wildcard-aware DNS brute force that also permutates the subdomains you
@@ -185,7 +188,7 @@ adding one is a one-file change and it appears throughout the UI. The **Plugins*
   `dirsearch`, `screenshot`, `iistilde`. Drop `app/modules/yours.py` with a `@register`
   class extending `Module`.
 - **Parsers** — ingest an artifact you already have and either render it (`pac`, `dsregcmd`,
-  `nmap`, `nessus`, `roadrecon-cap`) or fold it onto the workspace's subdomains (`nuclei`, a `kind = "findings"` parser
+  `nmap`, `nessus`, `roadrecon-cap`, `applocker`) or fold it onto the workspace's subdomains (`nuclei`, a `kind = "findings"` parser
   that writes each finding to the matching host's Vulnerabilities panel). Drop
   `app/plugins/yours_plugin.py` with a `@register_parser` class extending `ParserPlugin`
   (a `detect()`, a `parse()`, and either a render partial under `templates/plugins/` or an
@@ -229,6 +232,15 @@ nothing is executed, it's pure text parsing:
   classic holes CA reviews look for: legacy auth not blocked, MFA not required for all users,
   admins unprotected, exclusion "backdoors", MFA scoped to browsers only, and
   trusted-location IP bypasses.
+- **AppLocker** (`Get-AppLockerPolicy -Effective -Xml`) — every rule collection and rule, plus
+  a **Gaps & bypasses** panel: collections left NotConfigured / AuditOnly, the default
+  `%WINDIR%\*` / `%PROGRAMFILES%\*` allows (those trees hold user-writable subfolders), explicit
+  writable-path allows, and wildcard publisher rules (a Microsoft wildcard admits signed
+  LOLBins).
+
+Each parser also advertises the command to **collect** its input (e.g. `dsregcmd /status`,
+`Get-AppLockerPolicy -Effective -Xml`, `nmap -sV -oX -`) under "How to collect these" in the
+Import card, so you can grab it on the target and paste it back.
 
 Paste or upload; the type is auto-detected (or pick it). Saved per workspace and wiped with
 it. Large lists (e.g. a PAC's hundreds of DIRECT hosts) render as bounded, filterable

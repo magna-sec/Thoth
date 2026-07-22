@@ -12,6 +12,7 @@ class NmapPlugin(ParserPlugin):
     glyph = "📡"
     placeholder = "Paste nmap XML (-oX), greppable (-oG), or the normal scan report"
     partial = "plugins/nmap.html"
+    collect = "nmap -sV -oX - <targets>    # XML to stdout; or -oG - for greppable"
 
     def detect(self, text):
         return looks_like_nmap(text)

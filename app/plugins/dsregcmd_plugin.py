@@ -12,6 +12,7 @@ class DsregcmdPlugin(ParserPlugin):
     glyph = "🪟"
     placeholder = "Paste dsregcmd /status output"
     partial = "plugins/dsregcmd.html"
+    collect = "dsregcmd /status"
 
     def detect(self, text):
         return looks_like_dsregcmd(text)

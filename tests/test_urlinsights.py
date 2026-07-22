@@ -66,6 +66,10 @@ def test_domain_page_renders_the_tree(client, app, workspace):
     page = client.get(f"/workspaces/{workspace}/domains/{tid}").data.decode()
     assert 'data-pane="tree"' in page
     assert "Site tree" in page and "index.html" in page
+    # The hide-by-status controls and per-node status tags are present.
+    assert 'class="tree-hide" value="5xx"' in page
+    assert 'id="tree-hide-codes"' in page
+    assert 'data-status="200"' in page
 
 
 def test_split_url_handles_absolute_and_relative():
