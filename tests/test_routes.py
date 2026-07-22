@@ -64,6 +64,52 @@ def test_open_registration_removed(client):
     assert client.get("/register").status_code == 404
 
 
+def test_admin_sets_own_and_others_password(client, app):
+    # `client` is the seeded admin (magna). Create another user to reset.
+    client.post("/users", data={"email": "alice", "password": "oldpass12"},
+                follow_redirects=True)
+    with app.app_context():
+        magna = User.query.filter_by(email="magna").first()
+        alice = User.query.filter_by(email="alice").first()
+        magna_id, alice_id = magna.id, alice.id
+
+    # Admin resets Alice's password; she can log in with the new one.
+    client.post(f"/users/{alice_id}/password", data={"password": "alice-new-1"},
+                follow_redirects=True)
+    assert _login(app, "alice", "alice-new-1").get("/workspaces/").status_code == 200
+
+    # Admin changes their OWN password from the Users page, then re-auths with it.
+    client.post(f"/users/{magna_id}/password", data={"password": "magna-new-9"},
+                follow_redirects=True)
+    fresh = app.test_client()
+    fresh.post("/login", data={"email": "magna", "password": "magna-new-9"})
+    assert fresh.get("/users").status_code == 200
+    # The old password no longer works.
+    stale = app.test_client()
+    stale.post("/login", data={"email": "magna", "password": "magna"})
+    assert stale.get("/users").status_code in (302, 401)
+
+
+def test_set_password_rejects_short(client, app):
+    with app.app_context():
+        mid = User.query.filter_by(email="magna").first().id
+    page = client.post(f"/users/{mid}/password", data={"password": "short"},
+                       follow_redirects=True).data.decode()
+    assert "at least 8" in page
+
+
+def test_set_password_requires_admin(client, app):
+    with app.app_context():
+        op = User(email="operator", is_admin=False)
+        op.set_password("operator-pw")
+        db.session.add(op)
+        db.session.commit()
+        oid = op.id
+    op_client = _login(app, "operator", "operator-pw")
+    assert op_client.post(f"/users/{oid}/password",
+                          data={"password": "whatever12"}).status_code == 403
+
+
 def test_clear_ledger_domain_and_workspace(client, app, workspace):
     with app.app_context():
         t = Target(workspace_id=workspace, host="h.test", scheme="https")

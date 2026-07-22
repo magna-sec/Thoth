@@ -6,12 +6,21 @@
   <div class="card">
     <h2>Accounts</h2>
     <table class="data">
-      <thead><tr><th>Email</th><th>Role</th><th></th></tr></thead>
+      <thead><tr><th>Email</th><th>Role</th><th>Password</th><th></th></tr></thead>
       <tbody>
         {% for u in users %}
         <tr>
-          <td class="mono">{{ u.email }}</td>
+          <td class="mono">{{ u.email }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}</td>
           <td>{% if u.is_admin %}<span class="badge s2xx">admin</span>{% else %}<span class="badge unchecked">user</span>{% endif %}</td>
+          <td>
+            <form method="post" action="{{ url_for('auth.set_password', user_id=u.id) }}"
+                  style="margin:0; display:inline-flex; gap:4px">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input name="password" type="password" required minlength="8" autocomplete="new-password"
+                     placeholder="{{ 'new password (you)' if u.id == current_user.id else 'reset password' }}" style="width:160px">
+              <button class="btn small {{ 'primary' if u.id == current_user.id }}" type="submit">Set</button>
+            </form>
+          </td>
           <td>
             {% if u.id != current_user.id %}
             <form method="post" action="{{ url_for('auth.delete_user', user_id=u.id) }}" style="margin:0"
@@ -19,12 +28,13 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn small danger-btn" type="submit">Delete</button>
             </form>
-            {% else %}<span class="muted">you</span>{% endif %}
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    <p class="muted" style="font-size:12px">Set a new password on your own row to change yours. Minimum 8 characters.</p>
   </div>
 
   <div class="card">

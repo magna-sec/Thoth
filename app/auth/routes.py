@@ -59,6 +59,24 @@ def users():
                            users=User.query.order_by(User.email).all())
 
 
+@auth_bp.route("/users/<int:user_id>/password", methods=["POST"])
+@admin_required
+def set_password(user_id):
+    """Admin: set/reset a user's password (their own row = change my password)."""
+    u = db.session.get(User, user_id)
+    if u is None:
+        abort(404)
+    pw = request.form.get("password", "").strip()
+    if len(pw) < 8:
+        flash("Password must be at least 8 characters.", "error")
+    else:
+        u.set_password(pw)
+        db.session.commit()
+        who = "your password" if u.id == current_user.id else f"password for '{u.email}'"
+        flash(f"Updated {who}.", "info")
+    return redirect(url_for("auth.users"))
+
+
 @auth_bp.route("/users/<int:user_id>/delete", methods=["POST"])
 @admin_required
 def delete_user(user_id):
