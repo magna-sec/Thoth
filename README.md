@@ -73,8 +73,19 @@ flask run --debug
 ```
 
 Open http://127.0.0.1:5000, sign in **magna / magna**, add subdomains, **Check all live**,
-then fuzz. For real concurrency/multiplayer: `docker compose up --build` (Postgres + Redis +
-Celery).
+then fuzz.
+
+**Change the password:** `flask passwd` (prompts), or `flask passwd --email magna --password '…'`.
+
+**Share on the LAN (quick multiplayer):** `./start.sh --lan` (Windows: `start.bat --lan`).
+This binds `0.0.0.0` with **debug OFF** — on Linux/macOS via gunicorn — and prints your LAN
+URL. Add teammates from the **Users** page (you're admin). Keep it on a trusted LAN/VPN
+(e.g. [Tailscale](https://tailscale.com)) — there's no TLS. Never expose the default
+debug server (`./start.sh` with no flag) on the network: its debugger is remote code
+execution.
+
+**For real concurrency/multiplayer:** `docker compose up --build` (Postgres + Redis +
+Celery + gunicorn, debug off).
 
 > **`magna:magna` is a local-dev convenience only** — `flask seed` refuses it outside debug
 > mode. For any real deployment run `flask seed --email you@example.com` (a strong random

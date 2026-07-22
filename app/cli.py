@@ -47,6 +47,24 @@ def register_cli(app):
         else:
             click.echo(f"User '{email}' already exists — no change")
 
+    @app.cli.command("passwd")
+    @click.option("--email", default="magna", help="Account to update (default: magna).")
+    @click.option("--password", default=None,
+                  help="New password. Omit to be prompted (hidden input).")
+    def passwd(email, password):
+        """Set / reset a user's password."""
+        u = User.query.filter_by(email=email).first()
+        if u is None:
+            raise click.ClickException(
+                f"No user '{email}'. Existing users: "
+                + (", ".join(x.email for x in User.query.all()) or "none"))
+        if not password:
+            password = click.prompt("New password", hide_input=True,
+                                     confirmation_prompt=True)
+        u.set_password(password)
+        db.session.commit()
+        click.secho(f"Password updated for '{email}'.", fg="green")
+
     @app.cli.command("wipe")
     @click.argument("workspace_id", required=False, type=int)
     @click.option("--all", "wipe_all", is_flag=True, help="Wipe every workspace")
