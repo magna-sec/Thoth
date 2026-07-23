@@ -151,7 +151,8 @@ CSV/JSON/Markdown for humans and spreadsheets, TXT (tab-separated, or plain line
 ## Nuclei
 
 The **nuclei** parser plugin (add it from the workspace **Plugins** tab) takes the output of a nuclei
-run — `nuclei -jsonl` or `nuclei -json`, pasted or uploaded. Each finding is matched to its
+run — `nuclei -jsonl`, `nuclei -json`, **or the default terminal output**
+(`[template-id] [proto] [severity] host …`), pasted or uploaded. Each finding is matched to its
 subdomain **by host**; findings for hosts that aren't subdomains in the workspace are
 reported, not invented. Matches carry their **severity** and show up as a ranked
 **Vulnerabilities** panel on the subdomain page (critical → info) — the results go straight

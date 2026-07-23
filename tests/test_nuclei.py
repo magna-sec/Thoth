@@ -30,6 +30,49 @@ def test_parses_jsonl_severity_sorted():
     assert any(r["template_id"] == "old-field" for r in rows)   # templateID accepted
 
 
+TERMINAL = """[tls-version] [ssl] [info] host.example.com:443 ["tls12"]
+[weak-csp-detect:unsafe-script-src] [http] [info] https://host.example.com ["default-src 'none'"]
+[microsoft-iis-version] [http] [info] https://host.example.com ["Microsoft-IIS/10.0"]
+[http-missing-security-headers:referrer-policy] [http] [info] https://host.example.com
+[dns-saas-service-detection:azure] [dns] [info] host.example.com ["wc-az-uks..."]"""
+
+
+def test_parses_terminal_output():
+    from app.nucleiparse import looks_like_nuclei
+    assert looks_like_nuclei(TERMINAL)
+    rows, hosts = parse_nuclei(TERMINAL)
+    assert hosts == {"host.example.com"}
+    assert len(rows) == 5
+    ids = {r["template_id"] for r in rows}
+    assert {"tls-version", "weak-csp-detect", "microsoft-iis-version"} <= ids
+    csp = [r for r in rows if r["template_id"] == "weak-csp-detect"][0]
+    assert csp["matcher_name"] == "unsafe-script-src"
+    assert csp["host"] == "host.example.com" and csp["type"] == "http"
+
+
+def test_terminal_import_matches_subdomain(client, app, workspace):
+    with app.app_context():
+        db.session.add(Target(workspace_id=workspace, host="host.example.com",
+                              scheme="https"))
+        db.session.commit()
+    client.post(f"/workspaces/{workspace}/artifacts",
+                data={"content": TERMINAL, "kind": "auto"}, follow_redirects=True)
+    with app.app_context():
+        run = Run.query.filter_by(workspace_id=workspace, module="nuclei-import").one()
+        assert Finding.query.filter_by(run_id=run.id).count() == 5
+
+
+def test_dirsearch_import_hints_at_nuclei(client, app, workspace):
+    with app.app_context():
+        t = Target(workspace_id=workspace, host="host.example.com", scheme="https")
+        db.session.add(t)
+        db.session.commit()
+        tid = t.id
+    page = client.post(f"/workspaces/{workspace}/domains/{tid}/import-dirsearch",
+                       data={"results": TERMINAL}, follow_redirects=True).data.decode()
+    assert "looks like nuclei" in page
+
+
 def test_parses_json_array():
     text = json.dumps([
         {"template-id": "t1", "info": {"name": "A", "severity": "high"},

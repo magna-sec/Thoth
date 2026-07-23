@@ -663,7 +663,11 @@ def import_dirsearch(workspace_id, target_id):
     try:
         rows, hosts = parse_dirsearch(raw)
     except ImportError_ as e:
-        flash(str(e), "error")
+        # Point the operator at the right importer if they pasted a different tool's output.
+        from ..nucleiparse import looks_like_nuclei
+        hint = ("  This looks like nuclei output — import it with the nuclei parser in the "
+                "workspace Plugins tab instead." if looks_like_nuclei(raw) else "")
+        flash(str(e) + hint, "error")
         return redirect(url_for("workspaces.domain_detail", workspace_id=ws.id,
                                 target_id=t.id) + "#import")
 
