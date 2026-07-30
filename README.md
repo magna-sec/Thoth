@@ -18,7 +18,8 @@ re-fuzzed twice — no duplicated work between runs or teammates.
 > For authorized security testing only. Only scan hosts you have permission to test.
 > Thoth only touches a target during an **explicit** run (alive, dnsbrute, dirsearch,
 > screenshot, iistilde) or a manual **Check live** — browsing the UI, viewing a subdomain,
-> and every parser (PAC, dsregcmd, nmap, nessus, Conditional Access, AppLocker, nuclei) make
+> and every parser (PAC, dsregcmd, nmap, nessus, Conditional Access, AppLocker, web.config,
+> nuclei) make
 > **no** outbound requests.
 
 ## Features
@@ -189,7 +190,7 @@ adding one is a one-file change and it appears throughout the UI. The **Plugins*
   `dirsearch`, `screenshot`, `iistilde`. Drop `app/modules/yours.py` with a `@register`
   class extending `Module`.
 - **Parsers** — ingest an artifact you already have and either render it (`pac`, `dsregcmd`,
-  `nmap`, `nessus`, `roadrecon-cap`, `applocker`) or fold it onto the workspace's subdomains (`nuclei`, a `kind = "findings"` parser
+  `nmap`, `nessus`, `roadrecon-cap`, `applocker`, `webconfig`) or fold it onto the workspace's subdomains (`nuclei`, a `kind = "findings"` parser
   that writes each finding to the matching host's Vulnerabilities panel). Drop
   `app/plugins/yours_plugin.py` with a `@register_parser` class extending `ParserPlugin`
   (a `detect()`, a `parse()`, and either a render partial under `templates/plugins/` or an
@@ -238,6 +239,14 @@ nothing is executed, it's pure text parsing:
   `%WINDIR%\*` / `%PROGRAMFILES%\*` allows (those trees hold user-writable subfolders), explicit
   writable-path allows, and wildcard publisher rules (a Microsoft wildcard admits signed
   LOLBins).
+- **web.config** (ASP.NET / IIS) — **upload several at once**. A **Secrets &
+  misconfigurations** panel plus a per-file breakdown: connection strings and their SQL
+  passwords, appSettings secrets / API keys, a **static machineKey** (forge ViewState —
+  `__VIEWSTATE` RCE — and forms-auth / anti-CSRF tokens), Forms-auth `<credentials>` and
+  `<identity impersonate>` service-account passwords, SMTP creds, hardening flags
+  (`debug="true"`, `customErrors mode="Off"`, remote `trace`), and every URL referenced. The
+  collector dumps every `web.config` under the IIS webroot with a `===== path =====` header per
+  file, so each is parsed and attributed separately.
 
 Each parser also advertises the command to **collect** its input (e.g. `dsregcmd /status`,
 `Get-AppLockerPolicy -Effective -Xml`, `nmap -sV -oX -`) under "How to collect these" in the

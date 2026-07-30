@@ -731,11 +731,18 @@ def add_artifact(workspace_id):
     """
     ws = _get_member_workspace(workspace_id)
     raw = request.form.get("content", "")
-    upload = request.files.get("file")
     name = request.form.get("name", "").strip() or None
-    if upload and upload.filename:
-        raw = (raw + "\n" + upload.read().decode("utf-8", errors="ignore")).strip()
-        name = name or upload.filename
+    # Several files at once (e.g. every web.config under a site). Each is prefixed with a
+    # header so multi-document parsers can name them; single-doc parsers ignore stray text.
+    uploads = [u for u in request.files.getlist("file") if u and u.filename]
+    names = []
+    for upload in uploads:
+        content = upload.read().decode("utf-8", errors="ignore")
+        names.append(upload.filename)
+        raw += (f"\n===== {upload.filename} =====\n" if len(uploads) > 1 else "\n") + content
+    raw = raw.strip()
+    if uploads:
+        name = name or ", ".join(names)
     if not raw.strip():
         flash("Paste some content or choose a file first.", "error")
         return redirect(url_for("workspaces.detail", workspace_id=ws.id) + "#plugins")

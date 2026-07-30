@@ -1,0 +1,115 @@
+{# Renders parsed web.config file(s). Context: `art`, `d` (art.data_json). #}
+<div class="headline-banner">
+  <span class="headline-icon">⚙️</span>
+  <div>
+    <div class="headline-main">
+      {{ d.summary.files }} file(s) · {{ d.summary.connection_strings }} connection string(s) ·
+      {{ d.summary.secrets }} secret(s) · {{ d.summary.urls }} URL(s)
+    </div>
+    <div class="muted" style="font-size:12px">ASP.NET / IIS web.config — parsed statically</div>
+  </div>
+</div>
+
+{% if d.findings %}
+<div class="card">
+  <h2>Secrets &amp; misconfigurations <span class="muted">({{ d.findings|length }})</span></h2>
+  <ul class="notable-list">
+    {% for f in d.findings %}
+    <li><span class="chip sev-{{ f.severity }}">{{ f.severity }}</span>
+      <strong>{{ f.title }}</strong>
+      <span class="mono sensitive" style="word-break:break-all">— {{ f.detail }}</span>
+      {% if d.files|length > 1 %}<span class="muted" style="font-size:11px">· {{ f.file }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% for file in d.files %}
+<div class="card">
+  <h2 style="word-break:break-all">{{ file.name }}</h2>
+  {% if file.error %}<p class="chip sev-medium">{{ file.error }}</p>{% endif %}
+
+  {% if file.connection_strings %}
+  <h3 class="muted" style="margin:10px 0 4px">Connection strings</h3>
+  <div class="table-scroll">
+    <table class="data">
+      <thead><tr><th>Name</th><th>Server</th><th>Database</th><th>User</th><th>Password</th><th>Provider</th></tr></thead>
+      <tbody>
+        {% for c in file.connection_strings %}
+        <tr>
+          <td>{{ c.name or '—' }}</td>
+          <td class="mono sensitive">{{ c.parsed.server or '—' }}</td>
+          <td class="mono sensitive">{{ c.parsed.database or '—' }}</td>
+          <td class="mono sensitive">{{ c.parsed.user or ('(integrated)' if c.parsed.integrated else '—') }}</td>
+          <td class="mono sensitive">{% if c.has_password %}<span class="chip sev-high">{{ c.parsed.password }}</span>{% else %}—{% endif %}</td>
+          <td class="muted">{{ c.provider or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if file.machine_key %}
+  <h3 class="muted" style="margin:10px 0 4px">machineKey
+    {% if file.machine_key.static %}<span class="chip sev-high">static keys</span>{% else %}<span class="chip sev-info">auto-generated</span>{% endif %}
+  </h3>
+  <div class="fp-row"><span class="fp-key">validationKey</span>
+    <span class="mono sensitive" style="word-break:break-all">{{ file.machine_key.validationKey or '—' }}</span></div>
+  <div class="fp-row"><span class="fp-key">decryptionKey</span>
+    <span class="mono sensitive" style="word-break:break-all">{{ file.machine_key.decryptionKey or '—' }}</span></div>
+  {% endif %}
+
+  {% set creds = file.credentials %}
+  {% if creds or file.identity or (file.smtp and file.smtp.password) %}
+  <h3 class="muted" style="margin:10px 0 4px">Credentials</h3>
+  <ul class="notable-list">
+    {% for c in creds %}
+    <li><span class="chip {{ 'sev-high' if c.format|lower == 'clear' else 'sev-medium' }}">forms</span>
+      <span class="mono sensitive">{{ c.user }} : {{ c.password }}</span>
+      <span class="muted">({{ c.format }})</span></li>
+    {% endfor %}
+    {% if file.identity %}
+    <li><span class="chip sev-high">impersonate</span>
+      <span class="mono sensitive">{{ file.identity.user }}{% if file.identity.password %} : {{ file.identity.password }}{% endif %}</span></li>
+    {% endif %}
+    {% if file.smtp and file.smtp.password %}
+    <li><span class="chip sev-medium">smtp</span>
+      <span class="mono sensitive">{{ file.smtp.user }} : {{ file.smtp.password }} @ {{ file.smtp.host }}</span></li>
+    {% endif %}
+  </ul>
+  {% endif %}
+
+  {% if file.app_settings %}
+  <h3 class="muted" style="margin:10px 0 4px">appSettings <span style="font-size:11px">({{ file.app_settings|length }})</span></h3>
+  <div class="table-scroll">
+    <table class="data">
+      <thead><tr><th>Key</th><th>Value</th></tr></thead>
+      <tbody>
+        {% for a in file.app_settings %}
+        <tr>
+          <td>{{ a.key }}{% if a.secret %} <span class="chip sev-medium" style="font-size:10px">secret</span>{% endif %}</td>
+          <td class="mono sensitive" style="word-break:break-all">
+            {% if a.is_url %}<a href="{{ a.value }}" rel="noopener noreferrer nofollow" target="_blank">{{ a.value }}</a>{% else %}{{ a.value }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if file.urls %}
+  <h3 class="muted" style="margin:10px 0 4px">URLs referenced <span style="font-size:11px">({{ file.urls|length }})</span></h3>
+  <div class="fp-row" style="flex-wrap:wrap">
+    {% for u in file.urls %}
+    <a class="chip mono" href="{{ u }}" rel="noopener noreferrer nofollow" target="_blank" style="word-break:break-all">{{ u }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if not (file.connection_strings or file.machine_key or file.credentials or file.identity or file.smtp or file.app_settings or file.urls or file.error) %}
+  <p class="muted">Nothing notable extracted from this file.</p>
+  {% endif %}
+</div>
+{% endfor %}

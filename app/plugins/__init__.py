@@ -12,3 +12,4 @@ from . import nmap_plugin  # noqa: F401,E402
 from . import nuclei_plugin  # noqa: F401,E402
 from . import pac_plugin  # noqa: F401,E402
 from . import roadrecon_plugin  # noqa: F401,E402
+from . import webconfig_plugin  # noqa: F401,E402

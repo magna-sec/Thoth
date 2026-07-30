@@ -697,7 +697,7 @@
           {% for p in parsers.values() %}<option value="{{ p.name }}">{{ p.title }}</option>{% endfor %}
         </select>
         <input name="name" placeholder="label (optional)" style="width:160px">
-        <input type="file" name="file">
+        <input type="file" name="file" multiple title="One or more files — e.g. several web.config files">
         <button class="btn primary" type="submit">Parse &amp; save</button>
       </div>
     </form>
